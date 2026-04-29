@@ -19,15 +19,18 @@ import '../style/global.css';
 
     <div id="dashboard-section" class="w-full max-w-5xl hidden flex-col gap-6">
       
-      <div class="bg-white rounded-2xl shadow p-6 flex flex-wrap items-end gap-4 justify-between">
+      <div class="bg-white rounded-2xl shadow p-6 flex flex-wrap items-end gap-4 justify-between transition-all" id="settings-card">
         <div>
-          <h2 class="text-lg font-bold text-gray-800 mb-2">⚙️ 系統開放時間控制</h2>
+          <div class="flex items-center gap-3 mb-3">
+            <h2 class="text-lg font-bold text-gray-800">⚙️ 系統開放時間控制</h2>
+            <span id="current-status-badge" class="px-2 py-1 rounded-md text-xs font-bold bg-gray-200 text-gray-500 transition-colors">檢查中...</span>
+          </div>
           <div class="flex items-center gap-2 text-gray-600 text-sm">
-            <span>開放：</span><input type="time" id="open-time" class="border rounded px-2 py-1 outline-none">
-            <span>～ 關閉：</span><input type="time" id="close-time" class="border rounded px-2 py-1 outline-none">
+            <span>開放：</span><input type="time" id="open-time" class="border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+            <span>～ 關閉：</span><input type="time" id="close-time" class="border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
           </div>
         </div>
-        <button id="save-time-btn" class="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-medium transition-colors">儲存時間設定</button>
+        <button id="save-time-btn" class="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-medium transition-all duration-300">儲存時間設定</button>
       </div>
 
       <div class="bg-white rounded-2xl shadow p-6">
@@ -38,11 +41,11 @@ import '../style/global.css';
         <div class="overflow-x-auto">
           <table class="w-full text-left border-collapse">
             <thead>
-              <tr class="bg-gray-50 text-gray-600 text-sm border-b">
+              <tr class="bg-gray-50 text-gray-600 text-sm border-b border-gray-200">
                 <th class="p-3">時間</th><th class="p-3">姓名</th><th class="p-3">場地</th><th class="p-3">動作</th>
               </tr>
             </thead>
-            <tbody id="record-table-body" class="text-sm divide-y"></tbody>
+            <tbody id="record-table-body" class="text-sm divide-y divide-gray-100"></tbody>
           </table>
         </div>
       </div>
@@ -58,9 +61,27 @@ import '../style/global.css';
       const errorMsg = document.getElementById('login-error');
       const tableBody = document.getElementById('record-table-body');
       
+      // 【新增】計算並更新狀態燈號的函式
+      function updateStatusBadge(openTime, closeTime) {
+        const badge = document.getElementById('current-status-badge');
+        // 取得台灣目前的 HH:MM
+        const tpeTime = new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei', hour12: false, hour: '2-digit', minute: '2-digit' });
+        
+        if (tpeTime >= openTime && tpeTime <= closeTime) {
+          badge.textContent = '🟢 營業中 (系統開放打卡)';
+          badge.className = 'px-3 py-1 rounded-md text-xs font-bold bg-green-100 text-green-700 transition-colors';
+        } else {
+          badge.textContent = '🔴 休息中 (系統關閉打卡)';
+          badge.className = 'px-3 py-1 rounded-md text-xs font-bold bg-red-100 text-red-700 transition-colors';
+        }
+      }
+
       // 登入流程
       document.getElementById('login-btn').addEventListener('click', async () => {
+        const btn = document.getElementById('login-btn');
+        btn.textContent = '驗證中...';
         currentPassword = document.getElementById('admin-pwd').value;
+        
         try {
           const res = await fetch(`${API_URL}/api/settings`, {
             method: 'POST',
@@ -70,39 +91,76 @@ import '../style/global.css';
           const data = await res.json();
           
           if (data.success) {
-            // 登入成功：隱藏登入框，顯示面板，載入資料
             loginSection.classList.add('hidden');
             dashboardSection.classList.remove('hidden');
             dashboardSection.classList.add('flex');
+            
+            // 填入目前時間並立即更新燈號
             document.getElementById('open-time').value = data.open_time;
             document.getElementById('close-time').value = data.close_time;
+            updateStatusBadge(data.open_time, data.close_time);
+            
             fetchRecords();
           } else {
             errorMsg.classList.remove('hidden');
+            btn.textContent = '登入系統';
           }
-        } catch (e) { errorMsg.textContent = '連線失敗'; errorMsg.classList.remove('hidden'); }
+        } catch (e) { 
+          errorMsg.textContent = '連線失敗'; 
+          errorMsg.classList.remove('hidden'); 
+          btn.textContent = '登入系統';
+        }
       });
 
-      // 儲存時間設定
+      // 儲存時間設定 (加入更明顯的視覺回饋)
       document.getElementById('save-time-btn').addEventListener('click', async () => {
         const btn = document.getElementById('save-time-btn');
-        btn.textContent = '儲存中...';
-        await fetch(`${API_URL}/api/settings`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            password: currentPassword,
-            open_time: document.getElementById('open-time').value,
-            close_time: document.getElementById('close-time').value
-          })
-        });
-        btn.textContent = '✅ 已儲存';
-        setTimeout(() => btn.textContent = '儲存時間設定', 2000);
+        const card = document.getElementById('settings-card');
+        const newOpen = document.getElementById('open-time').value;
+        const newClose = document.getElementById('close-time').value;
+
+        btn.textContent = '🔄 儲存中...';
+        btn.classList.add('opacity-75', 'cursor-not-allowed');
+
+        try {
+          const res = await fetch(`${API_URL}/api/settings`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              password: currentPassword,
+              open_time: newOpen,
+              close_time: newClose
+            })
+          });
+          const data = await res.json();
+
+          if (data.success) {
+            // 儲存成功：按鈕變色 + 面板發光特效 + 立即更新狀態燈號
+            btn.textContent = '✅ 設定已生效！';
+            btn.classList.remove('bg-green-600', 'hover:bg-green-700', 'opacity-75', 'cursor-not-allowed');
+            btn.classList.add('bg-blue-600', 'hover:bg-blue-700');
+            
+            card.classList.add('ring-4', 'ring-blue-100');
+            
+            updateStatusBadge(newOpen, newClose);
+
+            // 3 秒後恢復原狀
+            setTimeout(() => {
+              btn.textContent = '儲存時間設定';
+              btn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+              btn.classList.add('bg-green-600', 'hover:bg-green-700');
+              card.classList.remove('ring-4', 'ring-blue-100');
+            }, 3000);
+          }
+        } catch (e) {
+          btn.textContent = '❌ 儲存失敗';
+          btn.classList.remove('opacity-75', 'cursor-not-allowed');
+        }
       });
 
       // 獲取紀錄
       async function fetchRecords() {
-        tableBody.innerHTML = '<tr><td colspan="4" class="p-4 text-center">載入中...</td></tr>';
+        tableBody.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-gray-400">🔄 載入資料中...</td></tr>';
         const res = await fetch(`${API_URL}/api/records`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -112,15 +170,15 @@ import '../style/global.css';
         
         if (data.success && data.records.length > 0) {
           tableBody.innerHTML = data.records.map(r => `
-            <tr>
+            <tr class="hover:bg-gray-50 transition-colors">
               <td class="p-3 text-gray-500">${new Date(r.timestamp).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })}</td>
-              <td class="p-3 font-medium">${r.worker_name}</td>
+              <td class="p-3 font-bold text-gray-800">${r.worker_name}</td>
               <td class="p-3 text-gray-500">${r.location_name}</td>
-              <td class="p-3">${r.action === 'IN' ? '🟢 簽到' : '🔴 簽退'}</td>
+              <td class="p-3">${r.action === 'IN' ? '<span class="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold">🟢 簽到</span>' : '<span class="bg-red-100 text-red-700 px-2 py-1 rounded text-xs font-bold">🔴 簽退</span>'}</td>
             </tr>
           `).join('');
         } else {
-          tableBody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-gray-400">尚無紀錄</td></tr>';
+          tableBody.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-gray-400">目前尚無打卡紀錄</td></tr>';
         }
       }
 
