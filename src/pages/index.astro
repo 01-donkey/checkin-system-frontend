@@ -20,6 +20,17 @@ import '../style/global.css';
       <h1 class="text-2xl font-bold text-gray-800 mb-2">現場人員打卡</h1>
       <p class="text-gray-500 mb-6 text-sm">請輸入您的手機後四碼並選擇打卡類型</p>
 
+        <div class="space-y-4 mb-6 text-left">
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-1">您的姓名 <span class="text-xs text-blue-500 font-normal">(初次簽到必填)</span></label>
+          <input 
+            type="text" 
+            id="name-input" 
+            placeholder="例如：王小明" 
+            class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-lg"
+          >
+        </div>
+
       <div class="space-y-4 mb-6 text-left">
         <div>
           <label class="block text-sm font-semibold text-gray-700 mb-1">手機後四碼</label>
@@ -58,6 +69,7 @@ import '../style/global.css';
 
     <script>
       const btn = document.getElementById('checkin-btn');
+      const nameInput = document.getElementById('name-input');
       const phoneInput = document.getElementById('phone-input');
       const actionSelect = document.getElementById('action-select');
       const statusBox = document.getElementById('status-box');
@@ -71,9 +83,18 @@ import '../style/global.css';
 
       btn.addEventListener('click', () => {
         // 1. 【新增防呆】檢查是否輸入四碼數字
+        const nameVal = nameInput.value.trim();
         const phoneVal = phoneInput.value.trim();
+        const actionVal = actionSelect.value;
+        // 防呆：檢查手機格式
         if (phoneVal.length !== 4 || isNaN(phoneVal)) {
           showStatus('❌ 錯誤：請輸入正確的 4 碼數字', true);
+          return;
+        }
+
+        // 防呆：如果是簽到，強迫一定要輸入姓名
+        if (actionVal === 'IN' && !nameVal) {
+          showStatus('❌ 錯誤：上班簽到請務必輸入您的姓名', true);
           return;
         }
 
@@ -98,6 +119,7 @@ import '../style/global.css';
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
+                name: nameVal,             // 送出姓名（如果有的話）
                 phone_last4: phoneVal,         // 送出輸入的後四碼
                 action: actionSelect.value,    // 送出選取的 IN 或 OUT
                 location_id: parseInt(urlLoc),
@@ -129,7 +151,7 @@ import '../style/global.css';
             btn.disabled = false;
             btn.innerHTML = '📍 重新點擊送出';
           },
-          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+          { enableHighAccuracy: true, timeout: 30000, maximumAge: 0 }
         );
       });
 
