@@ -1,10 +1,11 @@
 ---
-import Welcome from '../components/Welcome.astro';
-import Layout from '../layouts/Layout.astro';
+
 import '../style/global.css';
 // Welcome to Astro! Wondering what to do next? Check out the Astro documentation at https://docs.astro.build
 // Don't want to use any of this? Delete everything in this file, the `assets`, `components`, and `layouts` directories, and start fresh.
 
+
+//https://checkin-system-frontend.vercel.app/ 前端網站astro
 //npm run dev -- --host
 ---
 
@@ -93,7 +94,7 @@ import '../style/global.css';
             lngVal.textContent = lng.toFixed(4);
 
             // 2. 將收集到的使用者資料 POST 給後端
-            fetch('http://192.168.1.100:3000/api/checkin', { // 記得確認為您的區域網路 IP
+            fetch('https://checkin-backend-6vhp.onrender.com', { // 記得確認為您的區域網路 IP
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
