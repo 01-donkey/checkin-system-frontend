@@ -68,7 +68,7 @@ import '../style/global.css';
     </main>
 
     <script>
-      const btn = document.getElementById('checkin-btn');
+const btn = document.getElementById('checkin-btn');
       const nameInput = document.getElementById('name-input');
       const phoneInput = document.getElementById('phone-input');
       const actionSelect = document.getElementById('action-select');
@@ -81,25 +81,75 @@ import '../style/global.css';
       const urlLoc = urlParams.get('loc');
       const urlToken = urlParams.get('token');
 
-      btn.addEventListener('click', () => {
-        // 1. 【新增防呆】檢查是否輸入四碼數字
+      // 建立一個專門發送請求的函式，並預設 force_overwrite 為 false
+      function sendCheckinRequest(lat, lng, force_overwrite = false) {
         const nameVal = nameInput.value.trim();
         const phoneVal = phoneInput.value.trim();
         const actionVal = actionSelect.value;
-        // 防呆：檢查手機格式
-        if (phoneVal.length !== 4 || isNaN(phoneVal)) {
+
+        fetch('https://checkin-backend-6vhp.onrender.com/api/checkin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: nameVal,
+            phone_last4: phoneVal,
+            action: actionVal,
+            location_id: parseInt(urlLoc),
+            lat: lat,
+            lng: lng,
+            token: urlToken,
+            force_overwrite: force_overwrite // 【新增】強制覆蓋的參數
+          })
+        })
+        .then(response => response.json())
+        .then(data => {
+          // 【新增】如果後端要求確認覆蓋
+          if (data.require_confirm) {
+            // 呼叫手機瀏覽器原生的確認視窗
+            const userAgrees = window.confirm(data.message);
+            if (userAgrees) {
+              btn.innerHTML = '🔄 覆蓋更新中...';
+              showStatus('正在更新您的打卡時間...', false);
+              // 使用者同意，再次發送請求並將 force_overwrite 設為 true
+              sendCheckinRequest(lat, lng, true);
+            } else {
+              // 使用者取消
+              showStatus('ℹ️ 已取消操作，保留原有的打卡紀錄。', false);
+              btn.disabled = false;
+              btn.innerHTML = '📍 重新點擊送出';
+            }
+          } 
+          // 正常成功
+          else if (data.success) {
+            showStatus(data.message, false);
+            btn.innerHTML = '🎉 紀錄已完成';
+          } 
+          // 發生錯誤
+          else {
+            showStatus(`❌ ${data.message}`, true);
+            btn.disabled = false;
+            btn.innerHTML = '📍 重新點擊送出';
+          }
+        })
+        .catch(error => {
+          showStatus('❌ 伺服器連線失敗', true);
+          btn.disabled = false;
+          btn.innerHTML = '📍 重新點擊送出';
+        });
+      }
+
+      // 按鈕點擊事件：先獲取 GPS，再呼叫發送函式
+      btn.addEventListener('click', () => {
+        if (phoneInput.value.trim().length !== 4 || isNaN(phoneInput.value.trim())) {
           showStatus('❌ 錯誤：請輸入正確的 4 碼數字', true);
           return;
         }
-
-        // 防呆：如果是簽到，強迫一定要輸入姓名
-        if (actionVal === 'IN' && !nameVal) {
+        if (actionSelect.value === 'IN' && !nameInput.value.trim()) {
           showStatus('❌ 錯誤：上班簽到請務必輸入您的姓名', true);
           return;
         }
-
         if (!urlLoc || !urlToken) {
-          showStatus('❌ 錯誤：缺少打卡憑證。請確保您是掃描現場看板進入此畫面！', true);
+          showStatus('❌ 錯誤：缺少打卡憑證。請確保您是掃描現場看板進入！', true);
           return;
         }
 
@@ -113,51 +163,22 @@ import '../style/global.css';
             const lng = position.coords.longitude;
             latVal.textContent = lat.toFixed(4);
             lngVal.textContent = lng.toFixed(4);
-
-            // 2. 將收集到的使用者資料 POST 給後端
-            fetch('https://checkin-backend-6vhp.onrender.com/api/checkin', { // 記得確認為您的區域網路 IP
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                name: nameVal,             // 送出姓名（如果有的話）
-                phone_last4: phoneVal,         // 送出輸入的後四碼
-                action: actionSelect.value,    // 送出選取的 IN 或 OUT
-                location_id: parseInt(urlLoc),
-                lat: lat,
-                lng: lng,
-                token: urlToken
-              })
-            })
-            .then(response => response.json())
-            .then(data => {
-              if (data.success) {
-                // 成功時，顯示後端回傳的員工專屬歡迎語
-                showStatus(data.message, false);
-                btn.innerHTML = '🎉 紀錄已送出';
-              } else {
-                showStatus(`❌ ${data.message}`, true);
-                btn.disabled = false;
-                btn.innerHTML = '📍 重新點擊送出';
-              }
-            })
-            .catch(error => {
-              showStatus('❌ 伺服器連線失敗', true);
-              btn.disabled = false;
-              btn.innerHTML = '📍 重新點擊送出';
-            });
+            
+            // 第一次發送請求，force_overwrite 為預設的 false
+            sendCheckinRequest(lat, lng);
           },
           (error) => {
             showStatus('❌ 定位失敗：請至設定開啟位置權限。', true);
             btn.disabled = false;
             btn.innerHTML = '📍 重新點擊送出';
           },
-          { enableHighAccuracy: true, timeout: 30000, maximumAge: 0 }
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
         );
       });
 
       function showStatus(message, isError) {
         statusBox.classList.remove('hidden');
-        statusText.textContent = message;
+        statusText.innerText = message; // 使用 innerText 以支援換行符號 \n
         statusText.className = isError ? 'text-red-600 font-bold pb-2 border-b' : 'text-green-700 font-bold pb-2 border-b text-lg';
       }
     </script>
