@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+/* --- 專為 Markdown 打造的閱讀美化設定 --- */
+
+/* 1. 內文：增加行距，讓閱讀不吃力 */
+p { 
+  margin-bottom: 1.5rem; 
+  line-height: 1.8; 
+  color: #374151; 
+  letter-spacing: 0.025em;
+}
+
+/* 2. 主標題 (h2)：加上深藍色與底線，區隔內容區塊 */
+h2 { 
+  font-size: 1.75rem; 
+  font-weight: 700; 
+  margin-top: 3rem; 
+  margin-bottom: 1.5rem; 
+  color: #1e3a8a; 
+  border-bottom: 2px solid #e5e7eb; 
+  padding-bottom: 0.5rem; 
+}
+
+/* 3. 次標題 (h3)：俐落的深灰色 */
+h3 { 
+  font-size: 1.25rem; 
+  font-weight: 600; 
+  margin-top: 2rem; 
+  margin-bottom: 1rem; 
+  color: #111827; 
+}
+
+/* 4. 列表：恢復圓點點，並對齊縮排 */
+ul { 
+  list-style-type: disc; 
+  padding-left: 1.5rem; 
+  margin-bottom: 1.5rem; 
+  color: #374151; 
+  line-height: 1.8; 
+}
+li { 
+  margin-bottom: 0.5rem; 
+}
+
+/* 5. 粗體字：加深對比 */
+strong { 
+  color: #111827; 
+  font-weight: 700; 
+}

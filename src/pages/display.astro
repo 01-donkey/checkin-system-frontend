@@ -1,0 +1,117 @@
+---
+// src/pages/display.astro
+import '../style/global.css';
+---
+
+---
+// src/pages/display.astro
+---
+<html lang="zh-TW">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>現場報到站</title>
+  </head>
+  <body class="bg-gray-900 min-h-screen flex flex-col items-center justify-center p-4">
+    <div class="bg-white rounded-3xl shadow-2xl p-10 text-center w-full max-w-lg relative">
+      
+      <div class="absolute top-4 right-4">
+        <select id="location-select" class="bg-gray-100 border border-gray-300 text-gray-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 outline-none">
+          <option value="">載入場地中...</option>
+        </select>
+      </div>
+
+      <h1 class="text-3xl font-extrabold text-gray-800 mb-2 mt-4" id="display-title">現場人員簽到站</h1>
+      <p class="text-gray-500 mb-8 text-lg">請開啟相機掃描下方條碼完成打卡</p>
+      
+      <div class="flex justify-center mb-6">
+        <canvas id="qrcode-canvas" class="w-64 h-64 border-4 border-gray-100 rounded-xl"></canvas>
+      </div>
+
+      <p class="text-red-500 font-bold text-sm animate-pulse">⚠️ 此條碼每 5 秒自動更新，截圖無效</p>
+      <p id="last-update" class="text-gray-400 text-xs mt-2">最後更新：載入中...</p>
+    </div>
+
+    <script>
+      import QRCode from 'qrcode';
+
+      const canvas = document.getElementById('qrcode-canvas');
+      const updateText = document.getElementById('last-update');
+      const locationSelect = document.getElementById('location-select');
+      const displayTitle = document.getElementById('display-title');
+      
+      // 保留您專屬的本地端 IP
+      const BASE_URL = 'http://10.77.94.230:4321'; 
+      const API_URL = 'http://10.77.94.230:3000';
+
+      let refreshInterval;
+
+      // 1. 初始化：去後端抓取所有場地
+      async function fetchLocations() {
+        try {
+          const res = await fetch(`${API_URL}/api/locations`);
+          const data = await res.json();
+          if (data.success) {
+            // 清空並填入下拉選單
+            locationSelect.innerHTML = '';
+            data.locations.forEach(loc => {
+              const option = document.createElement('option');
+              option.value = loc.id;
+              option.textContent = loc.location_name;
+              locationSelect.appendChild(option);
+            });
+            
+            // 更新標題
+            displayTitle.textContent = `${locationSelect.options[locationSelect.selectedIndex].text} 簽到站`;
+            
+            // 開始產生 QR Code
+            startQRCodeCycle();
+          }
+        } catch (error) {
+          console.error('獲取場地失敗', error);
+          locationSelect.innerHTML = '<option>網路連線異常</option>';
+        }
+      }
+
+      // 2. 產生動態 QR Code
+      async function refreshQRCode() {
+        const currentLocationId = locationSelect.value;
+        if (!currentLocationId) return;
+
+        try {
+          // 向後端索取該場地的 Token
+          const response = await fetch(`${API_URL}/api/qr-token?location_id=${currentLocationId}`);
+          const data = await response.json();
+
+          if (data.success) {
+            const checkinUrl = `${BASE_URL}/?loc=${data.location_id}&token=${data.token}`;
+            QRCode.toCanvas(canvas, checkinUrl, { width: 300, margin: 2 }, function (error) {
+              if (error) console.error(error);
+            });
+
+            const now = new Date();
+            updateText.textContent = `最後更新：${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+          }
+        } catch (error) {
+          console.error('無法獲取條碼', error);
+        }
+      }
+
+      // 3. 控制計時器
+      function startQRCodeCycle() {
+        refreshQRCode();
+        if (refreshInterval) clearInterval(refreshInterval);
+        refreshInterval = setInterval(refreshQRCode, 5000);
+      }
+
+      // 當管理員切換場地時，立即換發新條碼，並更新標題
+      locationSelect.addEventListener('change', () => {
+        displayTitle.textContent = `${locationSelect.options[locationSelect.selectedIndex].text} 簽到站`;
+        startQRCodeCycle();
+      });
+
+      // 啟動程式
+      fetchLocations();
+    </script>
+  </body>
+</html>

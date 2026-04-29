@@ -1,11 +1,145 @@
 ---
 import Welcome from '../components/Welcome.astro';
 import Layout from '../layouts/Layout.astro';
-
+import '../style/global.css';
 // Welcome to Astro! Wondering what to do next? Check out the Astro documentation at https://docs.astro.build
 // Don't want to use any of this? Delete everything in this file, the `assets`, `components`, and `layouts` directories, and start fresh.
+
+//npm run dev -- --host
 ---
 
-<Layout>
-	<Welcome />
-</Layout>
+<html lang="zh-TW">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SNA/COSTA 現場打卡系統</title>
+  </head>
+  <body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+<main class="bg-white rounded-2xl shadow-lg w-full max-w-sm p-6 text-center">
+      <h1 class="text-2xl font-bold text-gray-800 mb-2">現場人員打卡</h1>
+      <p class="text-gray-500 mb-6 text-sm">請輸入您的手機後四碼並選擇打卡類型</p>
+
+      <div class="space-y-4 mb-6 text-left">
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-1">手機後四碼</label>
+          <input 
+            type="tel" 
+            id="phone-input" 
+            maxlength="4" 
+            placeholder="例如：0909" 
+            class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-lg tracking-widest"
+          >
+        </div>
+        
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-1">打卡類型</label>
+          <select id="action-select" class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-lg bg-white">
+            <option value="IN">🟢 上班簽到 (Check In)</option>
+            <option value="OUT">🔴 下班簽退 (Check Out)</option>
+          </select>
+        </div>
+      </div>
+
+      <button 
+        id="checkin-btn"
+        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-4 rounded-xl shadow-md transition-colors text-lg flex items-center justify-center gap-2"
+      >
+        <span>📍 點擊獲取位置並送出</span>
+      </button>
+
+      <div id="status-box" class="mt-6 p-4 rounded-lg bg-gray-50 hidden text-left text-sm">
+        <p id="status-text" class="text-gray-700 font-medium pb-2 border-b"></p>
+        <div class="mt-2 text-gray-400 space-y-1 text-xs">
+          <p>Lat: <span id="lat-val">--</span> | Lng: <span id="lng-val">--</span></p>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      const btn = document.getElementById('checkin-btn');
+      const phoneInput = document.getElementById('phone-input');
+      const actionSelect = document.getElementById('action-select');
+      const statusBox = document.getElementById('status-box');
+      const statusText = document.getElementById('status-text');
+      const latVal = document.getElementById('lat-val');
+      const lngVal = document.getElementById('lng-val');
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlLoc = urlParams.get('loc');
+      const urlToken = urlParams.get('token');
+
+      btn.addEventListener('click', () => {
+        // 1. 【新增防呆】檢查是否輸入四碼數字
+        const phoneVal = phoneInput.value.trim();
+        if (phoneVal.length !== 4 || isNaN(phoneVal)) {
+          showStatus('❌ 錯誤：請輸入正確的 4 碼數字', true);
+          return;
+        }
+
+        if (!urlLoc || !urlToken) {
+          showStatus('❌ 錯誤：缺少打卡憑證。請確保您是掃描現場看板進入此畫面！', true);
+          return;
+        }
+
+        btn.disabled = true;
+        btn.innerHTML = '🔄 處理中...';
+        showStatus('正在獲取 GPS 與驗證身分...', false);
+
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            latVal.textContent = lat.toFixed(4);
+            lngVal.textContent = lng.toFixed(4);
+
+            // 2. 將收集到的使用者資料 POST 給後端
+            fetch('http://192.168.1.100:3000/api/checkin', { // 記得確認為您的區域網路 IP
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                phone_last4: phoneVal,         // 送出輸入的後四碼
+                action: actionSelect.value,    // 送出選取的 IN 或 OUT
+                location_id: parseInt(urlLoc),
+                lat: lat,
+                lng: lng,
+                token: urlToken
+              })
+            })
+            .then(response => response.json())
+            .then(data => {
+              if (data.success) {
+                // 成功時，顯示後端回傳的員工專屬歡迎語
+                showStatus(data.message, false);
+                btn.innerHTML = '🎉 紀錄已送出';
+              } else {
+                showStatus(`❌ ${data.message}`, true);
+                btn.disabled = false;
+                btn.innerHTML = '📍 重新點擊送出';
+              }
+            })
+            .catch(error => {
+              showStatus('❌ 伺服器連線失敗', true);
+              btn.disabled = false;
+              btn.innerHTML = '📍 重新點擊送出';
+            });
+          },
+          (error) => {
+            showStatus('❌ 定位失敗：請至設定開啟位置權限。', true);
+            btn.disabled = false;
+            btn.innerHTML = '📍 重新點擊送出';
+          },
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        );
+      });
+
+      function showStatus(message, isError) {
+        statusBox.classList.remove('hidden');
+        statusText.textContent = message;
+        statusText.className = isError ? 'text-red-600 font-bold pb-2 border-b' : 'text-green-700 font-bold pb-2 border-b text-lg';
+      }
+    </script>
+    
+
+
+  </body>
+</html>
