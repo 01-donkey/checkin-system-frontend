@@ -94,7 +94,7 @@ import '../style/global.css';
             lngVal.textContent = lng.toFixed(4);
 
             // 2. 將收集到的使用者資料 POST 給後端
-            fetch('https://checkin-backend-6vhp.onrender.com', { // 記得確認為您的區域網路 IP
+            fetch('https://checkin-backend-6vhp.onrender.com/api/checkin', { // 記得確認為您的區域網路 IP
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
