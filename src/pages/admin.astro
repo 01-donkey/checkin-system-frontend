@@ -36,7 +36,8 @@ import '../style/global.css';
       <div class="bg-white rounded-2xl shadow p-6">
         <div class="flex justify-between items-center mb-4">
           <h2 class="text-lg font-bold text-gray-800">📋 打卡紀錄總覽</h2>
-          <button id="refresh-btn" class="text-blue-600 hover:bg-blue-50 px-3 py-1 rounded transition-colors text-sm font-medium">🔄 重新整理</button>
+            <button id="export-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded transition-colors text-sm font-medium shadow-sm">📊 匯出報表 (含工時)</button>
+            <button id="refresh-btn" class="text-blue-600 hover:bg-blue-50 px-3 py-1 rounded transition-colors text-sm font-medium border border-blue-200">🔄 重新整理</button>
         </div>
         <div class="overflow-x-auto">
           <table class="w-full text-left border-collapse">
@@ -181,8 +182,48 @@ import '../style/global.css';
           tableBody.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-gray-400">目前尚無打卡紀錄</td></tr>';
         }
       }
-
+      
+      // 重新整理按鈕
       document.getElementById('refresh-btn').addEventListener('click', fetchRecords);
+
+      // 匯出報表邏輯
+      document.getElementById('export-btn').addEventListener('click', async () => {
+        const btn = document.getElementById('export-btn');
+        btn.textContent = '⏳ 處理中...';
+        
+        try {
+          const res = await fetch(`${API_URL}/api/export`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: currentPassword })
+          });
+          
+          if (res.ok) {
+            // 接收後端傳來的 CSV 檔案並觸發下載
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = `工讀生工時統計_${new Date().toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei' }).replace(/\//g, '')}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            
+            btn.textContent = '✅ 下載成功';
+          } else {
+            alert('匯出失敗，請確認是否登入');
+            btn.textContent = '📊 匯出報表 (含工時)';
+          }
+        } catch (e) {
+          alert('連線異常');
+          btn.textContent = '📊 匯出報表 (含工時)';
+        }
+        
+        // 3秒後恢復按鈕文字
+        setTimeout(() => btn.textContent = '📊 匯出報表 (含工時)', 3000);
+      });
+
     </script>
   </body>
 </html>
