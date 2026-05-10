@@ -160,29 +160,71 @@ import '../style/global.css';
       });
 
       // 獲取紀錄
-      async function fetchRecords() {
-        tableBody.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-gray-400">🔄 載入資料中...</td></tr>';
-        const res = await fetch(`${API_URL}/api/records`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password: currentPassword })
-        });
-        const data = await res.json();
-        
-        if (data.success && data.records.length > 0) {
-          tableBody.innerHTML = data.records.map(r => `
-            <tr class="hover:bg-gray-50 transition-colors">
-              <td class="p-3 text-gray-500">${new Date(r.timestamp).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })}</td>
-              <td class="p-3 font-bold text-gray-800">${r.worker_name}</td>
-              <td class="p-3 text-gray-500">${r.location_name}</td>
-              <td class="p-3">${r.action === 'IN' ? '<span class="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold">🟢 簽到</span>' : '<span class="bg-red-100 text-red-700 px-2 py-1 rounded text-xs font-bold">🔴 簽退</span>'}</td>
-            </tr>
-          `).join('');
-        } else {
-          tableBody.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-gray-400">目前尚無打卡紀錄</td></tr>';
+
+async function fetchRecords() {
+        recordList.innerHTML = '<div class="p-8 text-center text-gray-400 font-medium animate-pulse">🔄 載入資料中...</div>';
+        try {
+          const res = await fetch(`${API_URL}/api/records`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: currentPassword })
+          });
+          const data = await res.json();
+          
+          if (data.success && data.records.length > 0) {
+            recordList.innerHTML = data.records.map(r => {
+              const isCheckIn = r.action === 'IN';
+              const actionText = isCheckIn ? '已簽到' : '已簽退';
+              
+              // 依據動作設定主題顏色與 SVG 圖示 (簽到為綠色向內箭頭，簽退為紅色向外箭頭)
+              const iconColorClass = isCheckIn ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600';
+              const svgIcon = isCheckIn 
+                ? `<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75"></path>`
+                : `<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9"></path>`;
+
+              const dateObj = new Date(r.timestamp);
+              const dateStr = dateObj.toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei', month: '2-digit', day: '2-digit' });
+              const timeStr = dateObj.toLocaleTimeString('zh-TW', { timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit' });
+
+              return `
+                <div class="p-4 hover:bg-white transition-colors duration-200 flex items-center justify-between group">
+                  <div class="flex items-center gap-4">
+                    <!-- 圓形 Icon 狀態指示器 -->
+                    <div class="w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${iconColorClass}">
+                      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">${svgIcon}</svg>
+                    </div>
+                    
+                    <!-- 員工與地點資訊 -->
+                    <div>
+                      <p class="text-sm font-bold text-gray-800">
+                        ${r.worker_name} 
+                        <span class="font-normal text-gray-500 ml-1 text-xs">${actionText}</span>
+                      </p>
+                      <p class="text-xs text-gray-500 mt-1 flex items-center gap-1">
+                        <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.243-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                        ${r.location_name}
+                      </p>
+                    </div>
+                  </div>
+
+                  <!-- 時間資訊 -->
+                  <div class="text-right">
+                    <span class="block text-sm font-bold text-gray-700">${timeStr}</span>
+                    <span class="block text-xs text-gray-400 mt-0.5">${dateStr}</span>
+                  </div>
+                </div>
+              `;
+            }).join('');
+          } else {
+            recordList.innerHTML = '<div class="p-8 text-center text-gray-400">目前尚無任何打卡紀錄</div>';
+          }
+        } catch (e) {
+            recordList.innerHTML = '<div class="p-8 text-center text-red-400">載入失敗，請稍後再試</div>';
         }
       }
       
+
+
       // 重新整理按鈕
       document.getElementById('refresh-btn').addEventListener('click', fetchRecords);
 
