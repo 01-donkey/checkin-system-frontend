@@ -10,13 +10,23 @@ import '../style/global.css';
     <title>現場報到站</title>
   </head>
   <body class="bg-gray-900 min-h-screen flex flex-col items-center justify-center p-4">
-    <div class="bg-white rounded-3xl shadow-2xl p-10 text-center w-full max-w-lg relative">
-      
+
+    <div id="access-denied" class="hidden bg-red-50 border-2 border-red-500 text-red-700 p-10 rounded-2xl shadow-lg text-center w-full max-w-md">
+      <h1 class="text-3xl font-extrabold mb-4">🛑 拒絕訪問</h1>
+      <p class="text-lg font-medium" id="error-msg">請從「後台管理系統」的安全連結<br>啟動此現場簽到螢幕。</p>
+    </div>
+
+    <div id="secure-content" class="hidden bg-white rounded-3xl shadow-2xl p-10 text-center w-full max-w-lg relative">
       <div class="absolute top-4 right-4">
         <select id="location-select" class="bg-gray-100 border border-gray-300 text-gray-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 outline-none">
           <option value="">載入場地中...</option>
         </select>
       </div>
+
+      <select id="action-select" class="p-2 border border-gray-300 rounded-lg font-bold text-lg mb-4">
+        <option value="IN">🟢 產生【上班簽到】條碼</option>
+        <option value="OUT">🔴 產生【下班簽退】條碼</option>
+      </select>
 
       <h1 class="text-3xl font-extrabold text-gray-800 mb-2 mt-4" id="display-title">現場人員簽到站</h1>
       <p class="text-gray-500 mb-8 text-lg">請開啟相機掃描下方條碼完成打卡</p>
@@ -32,37 +42,83 @@ import '../style/global.css';
     <script>
       import QRCode from 'qrcode';
 
+      // 取得畫面元素
+      const accessDenied = document.getElementById('access-denied');
+      const secureContent = document.getElementById('secure-content');
+      const errorMsg = document.getElementById('error-msg');
       const canvas = document.getElementById('qrcode-canvas');
       const updateText = document.getElementById('last-update');
       const locationSelect = document.getElementById('location-select');
       const displayTitle = document.getElementById('display-title');
-      
-      //  IP
-      const BASE_URL = 'https://checkin-system-frontend.vercel.app'; // 前端 URL，需與後端允許的 CORS 網域一致
-      const API_URL = 'https://checkin-backend-6vhp.onrender.com'; // 後端 API URL
+      const actionSelect = document.getElementById('action-select');
+
+      const BASE_URL = window.location.origin;
+      const API_URL = import.meta.env.PUBLIC_API_URL || 'http://localhost:3000';
 
       let refreshInterval;
 
-      // 1. 初始化：去後端抓取所有場地
+      // 🚀 主流程：安全驗證與載入
+      async function verifyAndStart() {
+        let kioskToken = sessionStorage.getItem('kiosk_token');
+
+        // 狀況 A：身上沒有 Token，需要用密碼去換
+        if (!kioskToken) {
+          const tempKey = localStorage.getItem('temp_kiosk_key');
+          
+          if (tempKey) {
+            try {
+              // 拿密碼去後端換取臨時鑰匙
+              const res = await fetch(`${API_URL}/api/qr-token/kiosk-token`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password: tempKey })
+              });
+              const data = await res.json();
+              
+              if (data.success) {
+                // ✅ 換鑰匙成功！存入 Session，然後徹底銷毀明文密碼
+                sessionStorage.setItem('kiosk_token', data.token);
+                localStorage.removeItem('temp_kiosk_key'); 
+                
+                // 顯示正常畫面並載入場地
+                secureContent.classList.remove('hidden');
+                fetchLocations();
+              } else {
+                throw new Error('密碼錯誤或授權失敗');
+              }
+            } catch (e) {
+              // ❌ 後端驗證失敗
+              accessDenied.classList.remove('hidden');
+              errorMsg.innerHTML = '驗證失敗或伺服器異常！<br>請關閉此分頁，從後台重新進入。';
+            }
+          } else {
+            // ❌ 沒 Token 也沒密碼（路人直接輸入網址進來）
+            accessDenied.classList.remove('hidden');
+          }
+        } 
+        // 狀況 B：身上已經有 Token 了 (例如按 F5 重新整理網頁)
+        else {
+          secureContent.classList.remove('hidden');
+          fetchLocations();
+        }
+      }
+
+      // 1. 抓取場地資料
       async function fetchLocations() {
         try {
           const res = await fetch(`${API_URL}/api/locations`);
-          const data = await res.json();
-          if (data.success) {
-            // 清空並填入下拉選單
+          const result = await res.json(); 
+          
+          if (result.success) {
             locationSelect.innerHTML = '';
-            data.locations.forEach(loc => {
+            result.locations.forEach(loc => {
               const option = document.createElement('option');
               option.value = loc.id;
               option.textContent = loc.location_name;
               locationSelect.appendChild(option);
             });
-            
-            // 更新標題
             displayTitle.textContent = `${locationSelect.options[locationSelect.selectedIndex].text} 簽到站`;
-            
-            // 開始產生 QR Code
-            startQRCodeCycle();
+            startQRCodeCycle(); // 場地載入完畢，開始畫條碼
           }
         } catch (error) {
           console.error('獲取場地失敗', error);
@@ -70,45 +126,64 @@ import '../style/global.css';
         }
       }
 
-      // 2. 產生動態 QR Code
+      // 2. 每 5 秒更新條碼
       async function refreshQRCode() {
         const currentLocationId = locationSelect.value;
+        const currentAction = actionSelect.value;
+
         if (!currentLocationId) return;
 
         try {
-          // 向後端索取該場地的 Token
-          const response = await fetch(`${API_URL}/api/qr-token?location_id=${currentLocationId}`);
-          const data = await response.json();
+          const response = await fetch(`${API_URL}/api/qr-token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              // 🛡️ 每次都拿最新的 Kiosk Token 傳給後端
+              kioskToken: sessionStorage.getItem('kiosk_token'), 
+              location_id: currentLocationId
+            })
+          });
+          const tokenData = await response.json(); 
 
-          if (data.success) {
-            const checkinUrl = `${BASE_URL}/?loc=${data.location_id}&token=${data.token}`;
+          if (tokenData.success) {
+            // 成功取得條碼，畫在畫面上
+            const checkinUrl = `${BASE_URL}/?loc=${tokenData.location_id}&action=${currentAction}&token=${tokenData.token}`;
+            console.log("🔗 開發者測試專用，點擊這個網址測試打卡 👉", checkinUrl);
             QRCode.toCanvas(canvas, checkinUrl, { width: 300, margin: 2 }, function (error) {
               if (error) console.error(error);
             });
-
             const now = new Date();
             updateText.textContent = `最後更新：${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+          } 
+          // 🚨 防護機制：如果 Kiosk Token 過期了 (超過 12 小時)
+          else if (tokenData.message === '授權已過期，請重新從後台開啟') {
+              clearInterval(refreshInterval);
+              secureContent.classList.add('hidden');
+              accessDenied.classList.remove('hidden');
+              errorMsg.innerHTML = '安全授權已過期 (12小時)！<br>請關閉此分頁，從後台重新開啟。';
           }
         } catch (error) {
           console.error('無法獲取條碼', error);
         }
       }
 
-      // 3. 控制計時器
       function startQRCodeCycle() {
         refreshQRCode();
         if (refreshInterval) clearInterval(refreshInterval);
         refreshInterval = setInterval(refreshQRCode, 5000);
       }
 
-      // 當管理員切換場地時，立即換發新條碼，並更新標題
+      // 監聽選單切換
       locationSelect.addEventListener('change', () => {
         displayTitle.textContent = `${locationSelect.options[locationSelect.selectedIndex].text} 簽到站`;
         startQRCodeCycle();
       });
+      actionSelect.addEventListener('change', () => {
+        startQRCodeCycle();
+      });
 
-      // 啟動程式
-      fetchLocations();
+      // 🚀 網頁一載入，第一件事就是執行安全驗證！
+      verifyAndStart();
     </script>
   </body>
 </html>

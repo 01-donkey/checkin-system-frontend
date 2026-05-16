@@ -1,0 +1,636 @@
+let globalRecordsArray = []; 
+      // 🌟【新增】：用來暫存班表資料
+      let globalRoster = [];
+      let globalAbsent = [];
+      // 🌟【新增】：用來暫存目前的場地列表，避免重複從後端抓
+      import QRCode from 'qrcode';
+
+      // 🌟【升級】優先讀取雲端環境變數，如果沒有才用 localhost
+      const API_URL = import.meta.env.PUBLIC_API_URL || 'http://localhost:3000';
+      let currentPassword = '';
+
+      const loginSection = document.getElementById('login-section');
+      const dashboardSection = document.getElementById('dashboard-section');
+      const errorMsg = document.getElementById('login-error');
+      const tableBody = document.getElementById('record-table-body');
+      const locationFilter = document.getElementById('location-filter'); // 🌟 抓取下拉選單
+
+      function updateStatusBadge(openTime, closeTime) {
+        const badge = document.getElementById('current-status-badge');
+        const tpeTime = new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei', hour12: false, hour: '2-digit', minute: '2-digit' });
+        if (tpeTime >= openTime && tpeTime <= closeTime) {
+          badge.textContent = '🟢 營業中 (系統開放打卡)';
+          badge.className = 'px-3 py-1 rounded-md text-xs font-bold bg-green-100 text-green-700 transition-colors';
+        } else {
+          badge.textContent = '🔴 休息中 (系統關閉打卡)';
+          badge.className = 'px-3 py-1 rounded-md text-xs font-bold bg-red-100 text-red-700 transition-colors';
+        }
+      }
+
+      // 登入邏輯
+      document.getElementById('login-btn').addEventListener('click', async () => {
+        const btn = document.getElementById('login-btn');
+        btn.textContent = '驗證中...';
+        currentPassword = document.getElementById('admin-pwd').value;
+        
+        try {
+          const res = await fetch(`${API_URL}/api/settings`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: currentPassword })
+          });
+          const data = await res.json();
+          
+if (data.success) {
+            loginSection.classList.add('hidden');
+            dashboardSection.classList.remove('hidden');
+            dashboardSection.classList.add('flex');
+            
+            document.getElementById('open-time').value = data.open_time;
+            document.getElementById('close-time').value = data.close_time;
+            updateStatusBadge(data.open_time, data.close_time);
+            
+            fetchRecords();
+            loadRosterList();            // 🌟 載入今天的班表與未到名單
+            loadLocationsForGenerator(); // 🌟 載入場地給 QR Code 生成器
+            
+          } else {
+            // 🌟 【修改】：動態顯示後端傳來的真實錯誤訊息 (可能是密碼錯誤，也可能是流量管制)
+            errorMsg.textContent = data.message || '密碼錯誤，請重試。'; 
+            errorMsg.classList.remove('hidden');
+            btn.textContent = '登入系統';
+          }
+        } catch (e) { 
+          // 🌟 【修改】：如果伺服器真的掛了，讓您立刻知道
+          errorMsg.textContent = '伺服器連線失敗 (可能已當機)'; 
+          errorMsg.classList.remove('hidden'); 
+          btn.textContent = '登入系統';
+        }
+
+      });
+
+      // 儲存時間邏輯
+      document.getElementById('save-time-btn').addEventListener('click', async () => {
+        const btn = document.getElementById('save-time-btn');
+        const card = document.getElementById('settings-card');
+        const newOpen = document.getElementById('open-time').value;
+        const newClose = document.getElementById('close-time').value;
+
+        btn.textContent = '🔄 儲存中...';
+        btn.classList.add('opacity-75', 'cursor-not-allowed');
+
+        try {
+          const res = await fetch(`${API_URL}/api/settings`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: currentPassword, open_time: newOpen, close_time: newClose })
+          });
+          const data = await res.json();
+
+          if (data.success) {
+            btn.textContent = '✅ 設定已生效！';
+            btn.classList.replace('bg-green-600', 'bg-blue-600');
+            btn.classList.replace('hover:bg-green-700', 'hover:bg-blue-700');
+            card.classList.add('ring-4', 'ring-blue-100');
+            updateStatusBadge(newOpen, newClose);
+
+            setTimeout(() => {
+              btn.textContent = '儲存時間設定';
+              btn.classList.replace('bg-blue-600', 'bg-green-600');
+              btn.classList.replace('hover:bg-blue-700', 'hover:bg-green-700');
+              btn.classList.remove('opacity-75', 'cursor-not-allowed');
+              card.classList.remove('ring-4', 'ring-blue-100');
+            }, 3000);
+          }
+        } catch (e) {
+          btn.textContent = '❌ 儲存失敗';
+        }
+      });
+
+      // 🌟 【修正】點擊開啟現場螢幕，並偷偷帶上密碼鑰匙
+      document.getElementById('open-display-btn').addEventListener('click', () => {
+        
+        // 🛡️ 防呆寫法：確認 ID 叫做 admin-pwd
+        const safePassword = currentPassword || document.getElementById('admin-pwd').value;
+
+        if (!safePassword) {
+          alert('請先輸入管理員密碼再開啟機台！');
+          return;
+        }
+
+        localStorage.setItem('temp_kiosk_key', safePassword);
+        window.open('/display', '_blank'); 
+      });
+
+      // 🌟 獲取所有打卡紀錄
+      async function fetchRecords() {
+        tableBody.innerHTML = '<tr><td colspan="7" class="p-8 text-center text-gray-400 font-medium animate-pulse">🔄 載入資料中...</td></tr>';
+        try {
+          const res = await fetch(`${API_URL}/api/records`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: currentPassword })
+          });
+          const data = await res.json();
+          
+          if (data.success && data.records.length > 0) {
+            const groupedData = {};
+            const locationsSet = new Set(); // 🌟 用來收集到底有幾個不重複的場地
+
+            data.records.forEach(r => {
+              const dateObj = new Date(r.timestamp);
+              const dateStr = dateObj.toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei', month: '2-digit', day: '2-digit' });
+              const fullDateStr = dateObj.toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei' }); 
+              const timeStr = dateObj.toLocaleTimeString('zh-TW', { timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit' });
+              
+              const key = `${r.worker_name}_${dateStr}`;
+
+              locationsSet.add(r.location_name); // 🌟 收集場地名稱
+
+              if (!groupedData[key]) {
+                groupedData[key] = {
+                  workerId: r.worker_id, // 🌟 【新增】：偷偷把員工 ID 記下來
+                  date: dateStr,
+                  fullDate: fullDateStr,
+                  group: r.worker_group || '未分類',
+                  subGroup: r.sub_group || '無',
+                  name: r.worker_name,
+                  location: r.location_name,
+                  inTime: '<span class="text-gray-300">--:--</span>',
+                  outTime: '<span class="text-gray-300">--:--</span>',
+                  hasIn: false,
+                  hasOut: false,
+                  bento: '', // 🌟 把原本的 workLog 改成便當
+                  specialStatus: ''
+
+                  //記得加,如果後面還有欄位要加的話
+                };
+              }
+
+              if (r.action === 'IN' && !groupedData[key].hasIn) {
+                groupedData[key].inTime = `<span class="font-bold text-emerald-700">${timeStr}</span>`;
+                groupedData[key].hasIn = true;
+                // 🌟 【關鍵修改】：抓取上班時選好的便當
+                if (r.work_log) groupedData[key].bento = r.work_log; 
+              } else if (r.action === 'OUT') {
+                if (r.special_status) groupedData[key].specialStatus = r.special_status;
+                groupedData[key].outTime = `<span class="font-bold text-rose-700">${timeStr}</span>`;
+                groupedData[key].hasOut = true;
+                // 🌟 下班就不抓 work_log 了
+              }
+            });
+
+            // 🌟 自動產生場地的下拉選項 (保留目前的選擇)
+            const currentSelected = locationFilter.value;
+            locationFilter.innerHTML = '<option value="ALL">顯示全部場地</option>';
+            locationsSet.forEach(loc => {
+              const opt = document.createElement('option');
+              opt.value = loc;
+              opt.textContent = loc;
+              locationFilter.appendChild(opt);
+            });
+            // 試著還原剛剛選的場地 (如果還存在的話)
+            if ([...locationFilter.options].some(o => o.value === currentSelected)) {
+               locationFilter.value = currentSelected;
+            }
+
+            globalRecordsArray = Object.values(groupedData); // 把整理好的資料存進全域變數
+            renderTable(); // 呼叫畫表格的函數
+            
+          } else {
+            tableBody.innerHTML = '<tr><td colspan="7" class="p-8 text-center text-gray-400">目前尚無任何打卡紀錄</td></tr>';
+            document.getElementById('stat-present').textContent = '0';
+            document.getElementById('stat-left').textContent = '0';
+          }
+        } catch (e) {
+            tableBody.innerHTML = '<tr><td colspan="7" class="p-8 text-center text-red-400">載入失敗，請稍後再試</td></tr>';
+        }
+      }
+
+      // 🌟 【新增】負責把資料畫成表格與統計人數的獨立函數
+      function renderTable() {
+        const todayStr = new Date().toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei' });
+        const selectedLocation = locationFilter.value; // 取得目前選了什麼場地
+        
+        // 🌟【新增】：取得搜尋框的文字並轉小寫
+        const searchQuery = document.getElementById('record-search').value.toLowerCase().trim();
+
+        let presentCount = 0;
+        let leftCount = 0;
+
+        // 🌟【升級過濾邏輯】：加入搜尋條件
+        const displayRecords = globalRecordsArray.filter(g => {
+          const isToday = (g.fullDate === todayStr);
+          const isMatchLocation = (selectedLocation === 'ALL' || g.location === selectedLocation);
+          
+          // 檢查姓名、組別或副組別是否包含搜尋字串
+          const isMatchSearch = !searchQuery || 
+                                (g.name && g.name.toLowerCase().includes(searchQuery)) || 
+                                (g.group && g.group.toLowerCase().includes(searchQuery)) ||
+                                (g.subGroup && g.subGroup.toLowerCase().includes(searchQuery));
+
+          return isToday && isMatchLocation && isMatchSearch;
+        });
+
+        
+
+        // 統計過濾後的人數
+        displayRecords.forEach(g => {
+          if (g.hasIn && !g.hasOut) presentCount++;
+          if (g.hasOut) leftCount++;
+        });
+
+        document.getElementById('stat-present').textContent = presentCount;
+        document.getElementById('stat-left').textContent = leftCount;
+
+        if (displayRecords.length > 0) {
+          tableBody.innerHTML = displayRecords.map(g => {
+return `
+              <tr class="hover:bg-blue-50 transition-colors">
+                <td class="p-3 font-medium text-gray-500">${g.date}</td>
+                
+                <td class="p-3">
+                  <span class="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs border border-gray-200">${g.group}</span>
+                </td>
+                
+                <td class="p-3">
+                  <div class="max-w-xs text-sm text-gray-800 font-medium">
+                    ${g.subGroup || '<span class="text-gray-300 italic font-normal">無</span>'}
+                  </div>
+                </td>
+
+                <td class="p-3 font-bold text-gray-800 text-base">
+                  ${g.name}
+                </td>
+                
+                <td class="p-3 text-gray-600 text-xs">${g.location}</td>
+                
+                <td class="p-3">${g.inTime}</td>
+                
+                <td class="p-3">${g.outTime}</td>
+                
+                <td class="p-3">
+                  <div class="max-w-xs text-sm text-gray-800 font-medium">
+                    ${g.bento || '<span class="text-gray-300 italic font-normal">未選擇便當</span>'}
+                  </div>
+                </td>
+                
+                <td class="p-3">
+                  <div class="max-w-xs text-sm text-gray-800 font-medium">
+                    ${g.specialStatus || '<span class="text-gray-300 italic font-normal">無</span>'}
+                  </div>
+                </td>
+              </tr>
+            `;
+          }).join('');
+        } else {
+          tableBody.innerHTML = '<tr><td colspan="7" class="p-8 text-center text-gray-400">該場地目前尚無打卡紀錄</td></tr>';
+        }
+      }
+
+      // 🌟 當場地選單被切換時，不用重新抓後端資料，直接重新畫表格就好！
+      locationFilter.addEventListener('change', renderTable);
+      
+      // 點擊重新整理，才去後端抓最新資料
+      document.getElementById('refresh-btn').addEventListener('click', fetchRecords);
+      // 🌟【新增】：只要搜尋框有打字，就立刻重新畫表格
+      document.getElementById('record-search').addEventListener('input', renderTable);
+
+
+// 🌟 【新增】控制自訂區間輸入框的顯示與隱藏
+      const exportRange = document.getElementById('export-range');
+      const customDateWrap = document.getElementById('custom-date-wrap');
+      
+      exportRange.addEventListener('change', () => {
+        if (exportRange.value === 'CUSTOM') {
+          customDateWrap.classList.remove('hidden');
+          customDateWrap.classList.add('flex'); // 顯示月曆
+        } else {
+          customDateWrap.classList.add('hidden');
+          customDateWrap.classList.remove('flex'); // 隱藏月曆
+        }
+      });
+
+// 🌟 【修改】匯出報表邏輯 (會自動幫您計算天數)
+      document.getElementById('export-btn').addEventListener('click', async () => {
+        const btn = document.getElementById('export-btn');
+        const rangeVal = exportRange.value;
+        let startDate = '';
+        let endDate = '';
+
+        // 輔助函式：取得正確的台灣時間 YYYY-MM-DD
+        const getTpeDateString = (daysOffset = 0) => {
+          const d = new Date();
+          d.setDate(d.getDate() + daysOffset);
+          // 'en-CA' 會強迫輸出成 YYYY-MM-DD 格式，非常適合資料庫搜尋
+          return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' });
+        };
+
+        // 根據選項自動設定時間範圍
+        if (rangeVal === 'TODAY') {
+          startDate = getTpeDateString(0);
+          endDate = getTpeDateString(0);
+        } else if (rangeVal === 'LAST_3_DAYS') {
+          startDate = getTpeDateString(-2); // 今天往前推2天，包含今天共3天
+          endDate = getTpeDateString(0);
+        } else if (rangeVal === 'LAST_7_DAYS') {
+          startDate = getTpeDateString(-6);
+          endDate = getTpeDateString(0);
+        } else if (rangeVal === 'CUSTOM') {
+          startDate = document.getElementById('export-start').value;
+          endDate = document.getElementById('export-end').value;
+        }
+        // 若為 'ALL'，startDate 跟 endDate 會維持空字串，後端就會自動把全部資料撈出來！
+
+        btn.textContent = '⏳ 處理中...';
+        try {
+          const res = await fetch(`${API_URL}/api/export`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              password: currentPassword,
+              startDate: startDate, 
+              endDate: endDate      
+            })
+          });
+          
+          if (res.ok) {
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            
+        // 🌟 檔名改為直接顯示「實際的日期區間」，這樣未來整理檔案最直觀！
+            let dateSuffix = '_全部';
+            if (startDate && endDate) {
+              if (startDate === endDate) {
+                // 如果只下載一天的資料（例如選「今天」），檔名就只顯示一天
+                // 結果：工讀生打卡總表_2026-05-13.csv
+                dateSuffix = `_${startDate}`; 
+              } else {
+                // 如果是下載多天（例如「近3天」或「自訂」），檔名就顯示區間
+                // 結果：工讀生打卡總表_2026-05-11至2026-05-13.csv
+                dateSuffix = `_${startDate}至${endDate}`; 
+              }
+            }
+            
+            a.download = `工讀生打卡總表${dateSuffix}.csv`;
+            
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            btn.textContent = '✅ 下載成功';
+          } else {
+            alert('匯出失敗，請確認是否登入');
+            btn.textContent = '📊 下載報表';
+          }
+        } catch (e) {
+          alert('連線異常');
+          btn.textContent = '📊 下載報表';
+        }
+        setTimeout(() => btn.textContent = '📊 下載報表', 3000);
+      });
+
+
+      // 🌟 【新增】班表匯入邏輯
+      // 預設將班表日期設為今天
+      document.getElementById('roster-date').value = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' });
+
+      // 執行上傳 (或清空) 班表
+      async function submitRoster(isClear = false) {
+        const btn = document.getElementById(isClear ? 'clear-roster-btn' : 'upload-roster-btn');
+        const originalText = btn.textContent;
+        const targetDate = document.getElementById('roster-date').value;
+        const rawText = document.getElementById('roster-input').value.trim();
+        
+        if (!targetDate) return alert('請選擇生效日期！');
+        
+        let rosterData = [];
+
+        if (!isClear) {
+          if (!rawText) return alert('請貼上人員名單！');
+const lines = rawText.split('\n');
+          for (let line of lines) {
+            const cleanLine = line.trim();
+            if (!cleanLine) continue; // 遇到空行直接跳過
+
+            // 💡 智慧解析：尋找字串最尾端的 4 個數字當作密碼
+            const match = cleanLine.match(/(\d{4})$/); 
+            
+            if (match) {
+              const phone = match[1]; // 抓到的四碼
+              const name = cleanLine.slice(0, -4).trim(); // 把整行扣掉最後四個字，剩下的就是名字
+              
+              if (name && phone) {
+                rosterData.push({ name: name, phone_last4: phone });
+              }
+            }
+          }
+          if (rosterData.length === 0) return alert('解析失敗，請確認格式是否為「姓名 四碼」');
+        }
+
+        btn.textContent = '⏳ 處理中...';
+        try {
+          const res = await fetch(`${API_URL}/api/roster`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: currentPassword, targetDate, rosterData })
+          });
+          const data = await res.json();
+          if (data.success) {
+            alert(isClear ? '✅ 當日班表已清空，系統切換為自由打卡模式！' : `✅ 成功鎖定！已上傳 ${rosterData.length} 筆排班。`);
+            if (!isClear) document.getElementById('roster-input').value = ''; // 成功後清空輸入框
+            // 🌟【新增這行】：上傳或清空成功後，自動觸發重新抓取並刷新畫面！
+            loadRosterList();
+          } else {
+            alert('上傳失敗：' + data.message);
+          }
+        } catch (e) {
+          alert('伺服器連線異常');
+        }
+        btn.textContent = originalText;
+      }
+
+      document.getElementById('upload-roster-btn').addEventListener('click', () => submitRoster(false));
+      document.getElementById('clear-roster-btn').addEventListener('click', () => submitRoster(true));
+
+
+      // 🌟【防彈版 + Loading 動畫】：去後端抓資料
+      async function loadRosterList() {
+        const targetDate = document.getElementById('roster-date').value;
+        if(!targetDate) return;
+        
+        // 🌟【新增】：抓到更新按鈕，並改變它的外觀
+        const refreshBtn = document.getElementById('refresh-roster-btn');
+        const originalText = refreshBtn.innerHTML; // 把原本的「🔄 更新名單」記下來
+        refreshBtn.innerHTML = '⏳ 載入中...';
+        refreshBtn.disabled = true; // 鎖住按鈕，防止狂點
+        refreshBtn.classList.add('opacity-50', 'cursor-not-allowed'); // 加上半透明變灰的效果
+
+        document.getElementById('roster-date-display').textContent = targetDate;
+        const rosterUl = document.getElementById('roster-list-ul');
+        const absentUl = document.getElementById('absent-list-ul');
+
+        try {
+          const res = await fetch(`${API_URL}/api/roster/list`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: currentPassword, targetDate })
+          });
+          const data = await res.json();
+          
+          if (data.success) {
+            globalRoster = data.roster || [];
+            globalAbsent = data.absent || [];
+            renderRosterLists();
+          } else {
+            console.error('後端拒絕載入班表:', data.message);
+            rosterUl.innerHTML = `<li class="text-red-400 list-none">${data.message || '拒絕訪問'}</li>`;
+            absentUl.innerHTML = `<li class="text-red-400 list-none">${data.message || '拒絕訪問'}</li>`;
+          }
+        } catch (e) {
+          console.error('🚨 班表 API 發生錯誤:', e);
+          rosterUl.innerHTML = '<li class="text-red-400 list-none">載入失敗，請按 F12 查看錯誤</li>';
+          absentUl.innerHTML = '<li class="text-red-400 list-none">載入失敗</li>';
+        } finally {
+          // 🌟【新增】：不管成功還是失敗，最後一定要執行 finally，把按鈕還原！
+          refreshBtn.innerHTML = originalText;
+          refreshBtn.disabled = false;
+          refreshBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+      }
+
+      // 🌟【防彈版】：渲染與過濾班表
+      function renderRosterLists() {
+        try {
+          const searchInput = document.getElementById('roster-search');
+          const query = searchInput ? searchInput.value.toLowerCase().trim() : '';
+          const rosterUl = document.getElementById('roster-list-ul');
+          const absentUl = document.getElementById('absent-list-ul');
+
+          // 🛡️ 加上 r.name && 的判斷，防止資料庫有空值導致當機
+          const filteredRoster = globalRoster.filter(r => 
+            (r.name && r.name.toLowerCase().includes(query)) || 
+            (r.phone_last4 && r.phone_last4.includes(query))
+          );
+          
+          const filteredAbsent = globalAbsent.filter(r => 
+            (r.name && r.name.toLowerCase().includes(query)) || 
+            (r.phone_last4 && r.phone_last4.includes(query))
+          );
+
+          document.getElementById('roster-count').textContent = filteredRoster.length;
+          document.getElementById('absent-count').textContent = filteredAbsent.length;
+
+          if (filteredRoster.length > 0) {
+            rosterUl.innerHTML = filteredRoster.map(r => `<li>${r.name} <span class="text-gray-400 text-xs">(${r.phone_last4})</span></li>`).join('');
+          } else {
+            rosterUl.innerHTML = '<li class="text-gray-400 italic list-none">查無相符名單</li>';
+          }
+          
+          if (filteredAbsent.length > 0) {
+            absentUl.innerHTML = filteredAbsent.map(r => `<li class="font-bold text-red-600">${r.name} <span class="text-red-400 text-xs font-normal">(${r.phone_last4})</span></li>`).join('');
+          } else if (globalRoster.length > 0 && query === '') {
+            absentUl.innerHTML = '<li class="text-green-600 font-bold list-none">🎉 全員到齊！</li>';
+          } else {
+            absentUl.innerHTML = '<li class="text-gray-400 italic list-none">查無相符名單</li>';
+          }
+        } catch (e) {
+          console.error('🚨 渲染班表時當機了:', e);
+        }
+      }
+
+      // 🌟【新增】：綁定班表搜尋框的打字事件
+      document.getElementById('roster-search').addEventListener('input', renderRosterLists);
+
+      // 綁定事件：當選日期或按下更新時，重新抓資料
+      document.getElementById('roster-date').addEventListener('change', loadRosterList);
+      document.getElementById('refresh-roster-btn').addEventListener('click', loadRosterList);
+
+
+      // 🌟 【新增】時效性 QR Code 生成器邏輯
+      let tempQrInterval;
+
+      // 載入場地選單給生成器使用
+      async function loadLocationsForGenerator() {
+        try {
+          const res = await fetch(`${API_URL}/api/locations`);
+          const data = await res.json();
+          if (data.success) {
+            document.getElementById('temp-qr-location').innerHTML = data.locations.map(loc => `<option value="${loc.id}">${loc.location_name}</option>`).join('');
+          }
+        } catch(e) {}
+      }
+
+      document.getElementById('generate-temp-qr-btn').addEventListener('click', async () => {
+        const locId = document.getElementById('temp-qr-location').value;
+        const action = document.getElementById('temp-qr-action').value;
+        const duration = document.getElementById('temp-qr-duration').value;
+        
+        if (!locId) return alert('請先等待場地載入');
+
+        try {
+          // 🌟【升級】：改成 POST 並把密碼包在 body 裡送過去
+          const res = await fetch(`${API_URL}/api/qr-token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              password: currentPassword, 
+              location_id: locId, 
+              duration: duration 
+            })
+          });
+          const data = await res.json();
+          
+          if (data.success) {
+            // 自動偵測目前網站的網址 (確保雲端也能用)
+            const baseUrl = window.location.origin;
+            const checkinUrl = `${baseUrl}/?loc=${data.location_id}&action=${action}&token=${data.token}`;
+            
+            const canvas = document.getElementById('temp-qr-canvas');
+            const placeholder = document.getElementById('temp-qr-placeholder');
+            const linkBox = document.getElementById('temp-qr-link-box');
+            const linkInput = document.getElementById('temp-qr-link');
+            const countdownText = document.getElementById('temp-qr-countdown');
+            
+            // 畫出條碼
+            QRCode.toCanvas(canvas, checkinUrl, { width: 220, margin: 2 });
+            
+            // 顯示元件
+            canvas.classList.remove('hidden');
+            linkBox.classList.remove('hidden');
+            countdownText.classList.remove('hidden');
+            placeholder.classList.add('hidden');
+            
+            linkInput.value = checkinUrl;
+            
+            // 讓網址點擊可以直接複製
+            linkInput.onclick = () => {
+              linkInput.select();
+              navigator.clipboard.writeText(linkInput.value);
+              alert('網址已複製！可以貼到 LINE 群組了！');
+            };
+            
+            // 啟動倒數計時器
+            const expireTime = Date.now() + parseInt(duration);
+            if (tempQrInterval) clearInterval(tempQrInterval);
+            
+            tempQrInterval = setInterval(() => {
+              const remain = Math.floor((expireTime - Date.now()) / 1000);
+              if (remain <= 0) {
+                countdownText.textContent = '🛑 此條碼已過期！';
+                clearInterval(tempQrInterval);
+              } else {
+                const h = Math.floor(remain / 3600);
+                const m = Math.floor((remain % 3600) / 60);
+                const s = remain % 60;
+                let timeStr = h > 0 ? `${h}小時 ${m}分 ${s}秒` : `${m}分 ${s}秒`;
+                countdownText.textContent = `⏳ 距離條碼失效：${timeStr}`;
+              }
+            }, 1000);
+          }
+        } catch(e) {
+          alert('條碼生成失敗，請確認伺服器連線');
+        }
+      });

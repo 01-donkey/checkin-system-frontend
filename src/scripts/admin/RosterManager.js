@@ -1,0 +1,137 @@
+export class RosterManager {
+  constructor(apiClient) {
+    this.api = apiClient;
+    this.globalRoster = [];
+    this.globalAbsent = [];
+    this.bindElements();
+    this.bindEvents();
+    // 預設日期為今天
+    this.rosterDate.value = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' });
+  }
+
+  bindElements() {
+    this.rosterDate = document.getElementById('roster-date');
+    this.rosterInput = document.getElementById('roster-input');
+    this.uploadBtn = document.getElementById('upload-roster-btn');
+    this.clearBtn = document.getElementById('clear-roster-btn');
+    this.refreshBtn = document.getElementById('refresh-roster-btn');
+    this.search = document.getElementById('roster-search');
+    this.dateDisplay = document.getElementById('roster-date-display');
+    this.rosterUl = document.getElementById('roster-list-ul');
+    this.absentUl = document.getElementById('absent-list-ul');
+    this.rosterCount = document.getElementById('roster-count');
+    this.absentCount = document.getElementById('absent-count');
+  }
+
+  bindEvents() {
+    this.uploadBtn.addEventListener('click', () => this.submitRoster(false));
+    this.clearBtn.addEventListener('click', () => this.submitRoster(true));
+    this.rosterDate.addEventListener('change', () => this.loadRosterList());
+    this.refreshBtn.addEventListener('click', () => this.loadRosterList());
+    this.search.addEventListener('input', () => this.renderRosterLists());
+  }
+
+  async submitRoster(isClear = false) {
+    const btn = isClear ? this.clearBtn : this.uploadBtn;
+    const originalText = btn.textContent;
+    const targetDate = this.rosterDate.value;
+    const rawText = this.rosterInput.value.trim();
+    
+    if (!targetDate) return alert('請選擇生效日期！');
+    
+    let rosterData = [];
+    if (!isClear) {
+      if (!rawText) return alert('請貼上人員名單！');
+      const lines = rawText.split('\n');
+      for (let line of lines) {
+        const cleanLine = line.trim();
+        if (!cleanLine) continue;
+        const match = cleanLine.match(/(\d{4})$/);
+        if (match) {
+          const phone = match[1];
+          const name = cleanLine.slice(0, -4).trim();
+          if (name && phone) {
+            rosterData.push({ name, phone_last4: phone });
+          }
+        }
+      }
+      if (rosterData.length === 0) return alert('解析失敗，請確認格式是否為「姓名 四碼」');
+    }
+
+    btn.textContent = '⏳ 處理中...';
+    try {
+      const data = await this.api.post('/api/roster', { targetDate, rosterData });
+      if (data.success) {
+        alert(isClear ? '✅ 當日班表已清空，系統切換為自由打卡模式！' : `✅ 成功鎖定！已上傳 ${rosterData.length} 筆排班。`);
+        if (!isClear) this.rosterInput.value = ''; 
+        this.loadRosterList();
+      } else {
+        alert('上傳失敗：' + data.message);
+      }
+    } catch (e) {
+      alert('伺服器連線異常');
+    } finally {
+      btn.textContent = originalText;
+    }
+  }
+
+  async loadRosterList() {
+    const targetDate = this.rosterDate.value;
+    if(!targetDate) return;
+    
+    const originalText = this.refreshBtn.innerHTML;
+    this.refreshBtn.innerHTML = '⏳ 載入中...';
+    this.refreshBtn.disabled = true;
+    this.refreshBtn.classList.add('opacity-50', 'cursor-not-allowed');
+    this.dateDisplay.textContent = targetDate;
+
+    try {
+      const data = await this.api.post('/api/roster/list', { targetDate });
+      if (data.success) {
+        this.globalRoster = data.roster || [];
+        this.globalAbsent = data.absent || [];
+        this.renderRosterLists();
+      } else {
+        this.rosterUl.innerHTML = `<li class="text-red-400 list-none">${data.message || '拒絕訪問'}</li>`;
+        this.absentUl.innerHTML = `<li class="text-red-400 list-none">${data.message || '拒絕訪問'}</li>`;
+      }
+    } catch (e) {
+      this.rosterUl.innerHTML = '<li class="text-red-400 list-none">載入失敗</li>';
+      this.absentUl.innerHTML = '<li class="text-red-400 list-none">載入失敗</li>';
+    } finally {
+      this.refreshBtn.innerHTML = originalText;
+      this.refreshBtn.disabled = false;
+      this.refreshBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+    }
+  }
+
+  renderRosterLists() {
+    const query = this.search.value.toLowerCase().trim();
+    
+    const filteredRoster = this.globalRoster.filter(r => 
+      (r.name && r.name.toLowerCase().includes(query)) || 
+      (r.phone_last4 && r.phone_last4.includes(query))
+    );
+    const filteredAbsent = this.globalAbsent.filter(r => 
+      (r.name && r.name.toLowerCase().includes(query)) || 
+      (r.phone_last4 && r.phone_last4.includes(query))
+    );
+
+    this.rosterCount.textContent = filteredRoster.length;
+    this.absentCount.textContent = filteredAbsent.length;
+
+    if (filteredRoster.length > 0) {
+      this.rosterUl.innerHTML = filteredRoster.map(r => `<li>${r.name} <span class="text-gray-400 text-xs">(${r.phone_last4})</span></li>`).join('');
+    } else {
+      this.rosterUl.innerHTML = '<li class="text-gray-400 italic list-none">查無相符名單</li>';
+    }
+    
+    if (filteredAbsent.length > 0) {
+      this.absentUl.innerHTML = filteredAbsent.map(r => `<li class="font-bold text-red-600">${r.name} <span class="text-red-400 text-xs font-normal">(${r.phone_last4})</span></li>`).join('');
+    } else if (this.globalRoster.length > 0 && query === '') {
+      this.absentUl.innerHTML = '<li class="text-green-600 font-bold list-none">🎉 全員到齊！</li>';
+    } else {
+      this.absentUl.innerHTML = '<li class="text-gray-400 italic list-none">查無相符名單</li>';
+    }
+  }
+}

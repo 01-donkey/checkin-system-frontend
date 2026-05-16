@@ -1,9 +1,7 @@
 ---
-
 import '../style/global.css';
 // Welcome to Astro! Wondering what to do next? Check out the Astro documentation at https://docs.astro.build
 // Don't want to use any of this? Delete everything in this file, the `assets`, `components`, and `layouts` directories, and start fresh.
-
 
 //https://checkin-system-frontend.vercel.app/ 前端網站astro
 //npm run dev -- --host
@@ -18,11 +16,14 @@ import '../style/global.css';
   <body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
 <main class="bg-white rounded-2xl shadow-lg w-full max-w-sm p-6 text-center">
       <h1 class="text-2xl font-bold text-gray-800 mb-2">現場人員打卡</h1>
-      <p class="text-gray-500 mb-6 text-sm">請輸入您的手機後四碼並選擇打卡類型</p>
+      <p class="text-gray-500 mb-6 text-sm">請輸入您的生日四碼並確認打卡類型</p>
 
-        <div class="space-y-4 mb-6 text-left">
-        <div>
-          <label class="block text-sm font-semibold text-gray-700 mb-1">您的姓名 <span class="text-xs text-blue-500 font-normal"></span></label>
+      <!-- 表單輸入區塊開始 -->
+      <div class="space-y-4 mb-6 text-left">
+        
+        <!-- 1. 姓名 -->
+        <div id="name-container">
+          <label class="block text-sm font-semibold text-gray-700 mb-1">您的姓名</label>
           <input 
             type="text" 
             id="name-input" 
@@ -31,27 +32,84 @@ import '../style/global.css';
           >
         </div>
 
-      <div class="space-y-4 mb-6 text-left">
+        <!-- 2. 手機尾碼 (原生日四碼) -->
         <div>
-          <label class="block text-sm font-semibold text-gray-700 mb-1">手機後四碼</label>
+          <label class="block text-sm font-semibold text-gray-700 mb-1">生日四碼</label>
           <input 
             type="tel" 
             id="phone-input" 
             maxlength="4" 
             placeholder="例如：0909" 
+            pattern="\d{4}"
             class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-lg tracking-widest"
           >
         </div>
-        
-        <div>
-          <label class="block text-sm font-semibold text-gray-700 mb-1">打卡類型</label>
-          <select id="action-select" class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-lg bg-white">
-            <option value="IN">🟢 上班簽到 (Check In)</option>
-            <option value="OUT">🔴 下班簽退 (Check Out)</option>
+
+        <!-- 3. 所屬組別 -->
+        <div id="group-container" class="hidden">
+          <label class="block text-sm font-semibold text-gray-700 mb-1">所屬組別</label>
+          <select id="group-select" class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-lg bg-white">
+            <option value="" disabled selected>請選擇組別</option>
+            <option value="1樓指引">1樓指引</option>
+            <option value="2樓指引">2樓指引</option>
+            <option value="行李房">行李房</option>
+            <option value="X光機">X光機</option>
+            <option value="一般報到櫃檯">一般報到櫃檯</option>
+            <option value="一般行李託運櫃檯">一般行李託運櫃檯</option>
+            <option value="套房報到櫃檯">套房報到櫃檯</option>
+            <option value="套房行李託運櫃檯">套房行李託運櫃檯</option>
+            <option value="移民署">移民署</option>
           </select>
         </div>
-      </div>
+        <!-- 【新增】副組別 (預設隱藏) -->
+        <div id="sub-group-container" class="hidden">
+            <label class="block text-sm font-semibold text-gray-700 mb-1">副組別 (選填)</label>
+            <select id="sub-group-select" class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-lg bg-white">
+              <option value="">無副組別</option>
+            <option value="1樓指引">1樓指引</option>
+            <option value="2樓指引">2樓指引</option>
+            <option value="行李房">行李房</option>
+            <option value="X光機">X光機</option>
+            <option value="一般報到櫃檯">一般報到櫃檯</option>
+            <option value="一般行李託運櫃檯">一般行李託運櫃檯</option>
+            <option value="套房報到櫃檯">套房報到櫃檯</option>
+            <option value="套房行李託運櫃檯">套房行李託運櫃檯</option>
+            <option value="移民署">移民署</option>
+            </select>
+          </div>
 
+          <div id="special-status-container" class="hidden">
+            <label class="block text-sm font-semibold text-gray-700 mb-1">特殊狀況紀錄 (選填)</label>
+            <textarea 
+              id="special-status-input" 
+              rows="2"
+              placeholder="若有器材損壞、人員受傷等狀況請註記" 
+              class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-lg"
+            ></textarea>
+          </div>
+
+        <!-- 【新增】今日便當調查 (預設隱藏) -->
+        <div id="bento-container" class="hidden">
+          <label class="block text-sm font-semibold text-gray-700 mb-1">今日便當調查</label>
+          <select id="bento-select" class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-lg bg-white">
+            <option value="" disabled selected>請選擇便當種類</option>
+            <option value="葷食便當"> 葷食</option>
+            <option value="素食便當"> 素食</option>
+          </select>
+        </div>
+
+        <!-- 4. 打卡類型 (唯讀顯示區) -->
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-1">打卡類型</label>
+          <div id="action-display" class="w-full px-4 py-3 rounded-lg text-lg font-bold text-center border">
+            讀取條碼中...
+          </div>
+        </div>
+
+      </div> 
+      <!-- 表單輸入區塊結束 (這個 div 正確對齊 space-y-4) -->
+
+      <!-- 按鈕與狀態列 (現在它們安全地待在 main 白框裡面了) -->
       <button 
         id="checkin-btn"
         class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-4 rounded-xl shadow-md transition-colors text-lg flex items-center justify-center gap-2"
@@ -65,66 +123,96 @@ import '../style/global.css';
           <p>Lat: <span id="lat-val">--</span> | Lng: <span id="lng-val">--</span></p>
         </div>
       </div>
+
     </main>
 
-    <script>
-const btn = document.getElementById('checkin-btn');
+<script>
+    // 🌟【升級】定義動態 API 網址
+      const API_URL = import.meta.env.PUBLIC_API_URL || 'http://localhost:3000';
+      const btn = document.getElementById('checkin-btn');
       const nameInput = document.getElementById('name-input');
       const phoneInput = document.getElementById('phone-input');
-      const actionSelect = document.getElementById('action-select');
       const statusBox = document.getElementById('status-box');
       const statusText = document.getElementById('status-text');
       const latVal = document.getElementById('lat-val');
       const lngVal = document.getElementById('lng-val');
+      
+      const groupContainer = document.getElementById('group-container');
+      const groupSelect = document.getElementById('group-select');
+      
+      const bentoContainer = document.getElementById('bento-container');
+      const bentoSelect = document.getElementById('bento-select');
+      
+      const nameContainer = document.getElementById('name-container');
+      const actionDisplay = document.getElementById('action-display');
+
+      // 宣告新變數副組別，特殊狀況紀錄相關元素
+      const subGroupContainer = document.getElementById('sub-group-container');
+      const subGroupSelect = document.getElementById('sub-group-select');
+      const specialStatusContainer = document.getElementById('special-status-container');
+      const specialStatusInput = document.getElementById('special-status-input');
 
       const urlParams = new URLSearchParams(window.location.search);
       const urlLoc = urlParams.get('loc');
       const urlToken = urlParams.get('token');
+      const urlAction = urlParams.get('action'); 
 
-      // 建立一個專門發送請求的函式，並預設 force_overwrite 為 false
-      function sendCheckinRequest(lat, lng, force_overwrite = false) {
+
+      if (urlAction === 'IN') {
+        actionDisplay.textContent = '🟢 上班簽到 (Check In)';
+        actionDisplay.className = 'w-full px-4 py-3 rounded-lg text-lg font-bold text-center border border-emerald-300 bg-emerald-50 text-emerald-700';
+        nameContainer.classList.remove('hidden'); 
+        groupContainer.classList.add('hidden');   
+        bentoContainer.classList.remove('hidden'); 
+      } 
+      else if (urlAction === 'OUT') {
+        actionDisplay.textContent = '🔴 下班簽退 (Check Out)';
+        actionDisplay.className = 'w-full px-4 py-3 rounded-lg text-lg font-bold text-center border border-rose-300 bg-rose-50 text-rose-700';
+        nameContainer.classList.add('hidden');       
+        groupContainer.classList.remove('hidden');   
+        bentoContainer.classList.add('hidden');    
+        subGroupContainer.classList.remove('hidden'); // 顯示副組別
+        specialStatusContainer.classList.remove('hidden'); // 顯示特殊狀況
+      } 
+      else {
+        actionDisplay.textContent = '⚠️ 條碼無效';
+        actionDisplay.className = 'w-full px-4 py-3 rounded-lg text-lg font-bold text-center border border-red-300 bg-red-50 text-red-700';
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+      }
+
+      function sendCheckinRequest(lat, lng) {
         const nameVal = nameInput.value.trim();
         const phoneVal = phoneInput.value.trim();
-        const actionVal = actionSelect.value;
+        const groupVal = urlAction === 'OUT' ? groupSelect.value : ''; 
+        const bentoVal = urlAction === 'IN' ? bentoSelect.value : ''; 
+        const subGroupVal = urlAction === 'OUT' ? subGroupSelect.value : '';
+        const specialStatusVal = urlAction === 'OUT' ? specialStatusInput.value.trim() : '';
 
-        fetch('https://checkin-backend-6vhp.onrender.com/api/checkin', {
+        fetch(`${API_URL}/api/checkin`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             name: nameVal,
             phone_last4: phoneVal,
-            action: actionVal,
+            action: urlAction,
             location_id: parseInt(urlLoc),
             lat: lat,
             lng: lng,
             token: urlToken,
-            force_overwrite: force_overwrite // 【新增】強制覆蓋的參數
+            group: groupVal,
+            sub_group: subGroupVal,       // 傳送副組別
+            special_status: specialStatusVal, // 傳送特殊狀況
+            bento: bentoVal
+            
           })
         })
         .then(response => response.json())
         .then(data => {
-          // 【新增】如果後端要求確認覆蓋
-          if (data.require_confirm) {
-            // 呼叫手機瀏覽器原生的確認視窗
-            const userAgrees = window.confirm(data.message);
-            if (userAgrees) {
-              btn.innerHTML = '🔄 覆蓋更新中...';
-              showStatus('正在更新您的打卡時間...', false);
-              // 使用者同意，再次發送請求並將 force_overwrite 設為 true
-              sendCheckinRequest(lat, lng, true);
-            } else {
-              // 使用者取消
-              showStatus('ℹ️ 已取消操作，保留原有的打卡紀錄。', false);
-              btn.disabled = false;
-              btn.innerHTML = '📍 重新點擊送出';
-            }
-          } 
-          // 正常成功
-          else if (data.success) {
+          if (data.success) {
             showStatus(data.message, false);
             btn.innerHTML = '🎉 紀錄已完成';
           } 
-          // 發生錯誤
           else {
             showStatus(`❌ ${data.message}`, true);
             btn.disabled = false;
@@ -138,18 +226,29 @@ const btn = document.getElementById('checkin-btn');
         });
       }
 
-      // 按鈕點擊事件：先獲取 GPS，再呼叫發送函式
       btn.addEventListener('click', () => {
-        if (phoneInput.value.trim().length !== 4 || isNaN(phoneInput.value.trim())) {
-          showStatus('❌ 錯誤：請輸入正確的 4 碼數字', true);
-          return;
-        }
-        if (actionSelect.value === 'IN' && !nameInput.value.trim()) {
-          showStatus('❌ 錯誤：上班簽到請務必輸入您的姓名', true);
+        if (!urlAction || (urlAction !== 'IN' && urlAction !== 'OUT')) {
+          showStatus('❌ 錯誤：無效的打卡條碼，請重新掃描', true);
           return;
         }
         if (!urlLoc || !urlToken) {
           showStatus('❌ 錯誤：缺少打卡憑證。請確保您是掃描現場看板進入！', true);
+          return;
+        }
+        if (phoneInput.value.trim().length !== 4 || isNaN(phoneInput.value.trim())) {
+          showStatus('❌ 錯誤：請輸入正確的 4 碼數字', true);
+          return;
+        }
+        if (urlAction === 'IN' && !nameInput.value.trim()) {
+          showStatus('❌ 錯誤：上班簽到請務必輸入您的姓名', true);
+          return;
+        }
+        if (urlAction === 'OUT' && !groupSelect.value) {
+          showStatus('❌ 錯誤：請選擇您所屬的組別', true);
+          return;
+        }
+        if (urlAction === 'IN' && !bentoSelect.value) {
+          showStatus('❌ 錯誤：請選擇您的便當種類', true);
           return;
         }
 
@@ -164,7 +263,6 @@ const btn = document.getElementById('checkin-btn');
             latVal.textContent = lat.toFixed(4);
             lngVal.textContent = lng.toFixed(4);
             
-            // 第一次發送請求，force_overwrite 為預設的 false
             sendCheckinRequest(lat, lng);
           },
           (error) => {
@@ -178,12 +276,9 @@ const btn = document.getElementById('checkin-btn');
 
       function showStatus(message, isError) {
         statusBox.classList.remove('hidden');
-        statusText.innerText = message; // 使用 innerText 以支援換行符號 \n
+        statusText.innerText = message;
         statusText.className = isError ? 'text-red-600 font-bold pb-2 border-b' : 'text-green-700 font-bold pb-2 border-b text-lg';
       }
     </script>
-    
-
-
   </body>
 </html>
