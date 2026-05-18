@@ -148,20 +148,30 @@ import '../style/global.css';
           if (tokenData.success) {
             // 成功取得條碼，畫在畫面上
             const checkinUrl = `${BASE_URL}/?loc=${tokenData.location_id}&action=${currentAction}&token=${tokenData.token}`;
-            console.log("🔗 開發者測試專用，點擊這個網址測試打卡 👉", checkinUrl);
+            // ✅ 改用 Astro 的環境變數守衛，只在本地開發時自動輸出
+            if (import.meta.env.DEV) {
+              console.log("🔗 開發測試專用，打卡網址：", checkinUrl);
+            }
             QRCode.toCanvas(canvas, checkinUrl, { width: 300, margin: 2 }, function (error) {
               if (error) console.error(error);
             });
             const now = new Date();
-            updateText.textContent = `最後更新：${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+            const pad = n => String(n).padStart(2, '0');
+            updateText.textContent = `最後更新：${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
           } 
           // 🚨 防護機制：如果 Kiosk Token 過期了 (超過 12 小時)
-          else if (tokenData.message === '授權已過期，請重新從後台開啟') {
+          // 🌟【架構升級】：將原本的 tokenData.message === '...' 
+          // 改用後端專屬的 errorCode 判斷，取代脆弱的中文判斷
+          else if (tokenData.errorCode === 'KIOSK_TOKEN_EXPIRED') {
               clearInterval(refreshInterval);
               secureContent.classList.add('hidden');
               accessDenied.classList.remove('hidden');
-              errorMsg.innerHTML = '安全授權已過期 (12小時)！<br>請關閉此分頁，從後台重新開啟。';
-          }
+              errorMsg.innerHTML = '安全授權已過期！<br>請關閉此分頁，從後台重新開啟。';
+            } else {
+              // 其他錯誤：在畫面上顯示，不要靜默
+              updateText.textContent = `⚠️ 更新失敗 (${tokenData.message || '伺服器異常'})`;
+              updateText.style.color = '#ef4444';
+            }
         } catch (error) {
           console.error('無法獲取條碼', error);
         }

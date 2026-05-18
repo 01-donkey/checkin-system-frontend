@@ -12,6 +12,12 @@ export default defineConfig({
 
     define: {
       'import.meta.env.PUBLIC_API_URL': JSON.stringify(process.env.PUBLIC_API_URL)
+    },
+    server: {
+      allowedHosts: true,
+    },
+    preview: {
+      allowedHosts: true,
     }
   }
 

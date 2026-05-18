@@ -25,15 +25,21 @@ export class QRManager {
   }
 
   async loadLocations() {
-    try {
-      const data = await this.api.get('/api/locations');
-      if (data.success) {
-        this.locationSelect.innerHTML = data.locations.map(loc => `<option value="${loc.id}">${loc.location_name}</option>`).join('');
-      }
-    } catch(e) {
-      console.error('Failed to load locations', e);
+  try {
+    const data = await this.api.get('/api/locations');
+    if (data.success) {
+      this.locationSelect.innerHTML = ''; // 清空
+      data.locations.forEach(loc => {
+        const option = document.createElement('option');
+        option.value = String(parseInt(loc.id) || 0); // 確保 id 是數字
+        option.textContent = loc.location_name;        // textContent 自動跳脫
+        this.locationSelect.appendChild(option);
+      });
     }
+  } catch(e) {
+    console.error('Failed to load locations', e);
   }
+}
 
   async generateQR() {
     const locId = this.locationSelect.value;

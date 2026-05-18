@@ -113,8 +113,18 @@ export class RecordManager {
     }
   }
 
+
+  // 🌟【修正 1】：移除 function 關鍵字，變成類別方法
+  escHtml(str) {
+    return String(str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
   renderTable() {
-    // 今日日期也改用 en-CA，確保與資料庫的 YYYY-MM-DD 完美匹配
     const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' });
     const selectedLocation = this.locationFilter.value;
     const searchQuery = this.recordSearch.value.toLowerCase().trim();
@@ -126,7 +136,6 @@ export class RecordManager {
       const isToday = (g.fullDate === todayStr);
       const isMatchLocation = (selectedLocation === 'ALL' || g.location === selectedLocation);
       
-      // 確保即使某個欄位是 null 也不會導致 toLowerCase() 報錯當機
       const isMatchSearch = !searchQuery || 
                             (g.name && g.name.toLowerCase().includes(searchQuery)) || 
                             (g.group && g.group.toLowerCase().includes(searchQuery)) ||
@@ -143,17 +152,16 @@ export class RecordManager {
     this.statLeft.textContent = leftCount;
 
     if (displayRecords.length > 0) {
+      // 🌟【修正 2】：呼叫時必須加上 this.escHtml
       this.tableBody.innerHTML = displayRecords.map(g => `
         <tr class="hover:bg-blue-50 transition-colors">
-          <td class="p-3 font-medium text-gray-500">${g.date}</td>
-          <td class="p-3"><span class="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs border border-gray-200">${g.group}</span></td>
-          <td class="p-3"><div class="max-w-xs text-sm text-gray-800 font-medium">${g.subGroup || '<span class="text-gray-300 italic font-normal">無</span>'}</div></td>
-          <td class="p-3 font-bold text-gray-800 text-base">${g.name}</td>
-          <td class="p-3 text-gray-600 text-xs">${g.location}</td>
-          <td class="p-3">${g.inTime}</td>
-          <td class="p-3">${g.outTime}</td>
-          <td class="p-3"><div class="max-w-xs text-sm text-gray-800 font-medium">${g.bento || '<span class="text-gray-300 italic font-normal">未選擇便當</span>'}</div></td>
-          <td class="p-3"><div class="max-w-xs text-sm text-gray-800 font-medium">${g.specialStatus || '<span class="text-gray-300 italic font-normal">無</span>'}</div></td>
+          <td class="p-3 font-medium text-gray-500">${this.escHtml(g.date)}</td>
+          <td class="p-3"><span class="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs border border-gray-200">${this.escHtml(g.group)}</span></td>
+          <td class="p-3"><div class="max-w-xs text-sm text-gray-800 font-medium">${this.escHtml(g.subGroup) || '<span class="text-gray-300 italic font-normal">無</span>'}</div></td>
+          <td class="p-3 font-bold text-gray-800 text-base">${this.escHtml(g.name)}</td>
+          <td class="p-3 text-gray-600 text-xs">${this.escHtml(g.location)}</td>
+          <td class="p-3">${g.inTime}</td> <td class="p-3">${g.outTime}</td> <td class="p-3"><div class="max-w-xs text-sm text-gray-800 font-medium">${this.escHtml(g.bento) || '<span class="text-gray-300 italic font-normal">未選擇便當</span>'}</div></td>
+          <td class="p-3"><div class="max-w-xs text-sm text-gray-800 font-medium">${this.escHtml(g.specialStatus) || '<span class="text-gray-300 italic font-normal">無</span>'}</div></td>
         </tr>
       `).join('');
     } else {

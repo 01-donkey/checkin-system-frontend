@@ -121,10 +121,17 @@ export class SystemManager {
     }
   }
 
-  openKioskDisplay() {
+    openKioskDisplay() {
     const safePassword = this.api.password;
     if (!safePassword) return alert('請先輸入管理員密碼再開啟機台！');
+    
     localStorage.setItem('temp_kiosk_key', safePassword);
-    window.open('/display', '_blank'); 
+    const newWindow = window.open('/display', '_blank');
+    
+    // 🛡️ 防彈窗被擋：若視窗沒有開啟，立刻清除暫存密碼
+    if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+      localStorage.removeItem('temp_kiosk_key');
+      alert('⚠️ 彈窗被瀏覽器攔截！請允許此網站開啟彈窗後重試。');
+    }
   }
 }

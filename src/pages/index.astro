@@ -3,7 +3,6 @@ import '../style/global.css';
 // Welcome to Astro! Wondering what to do next? Check out the Astro documentation at https://docs.astro.build
 // Don't want to use any of this? Delete everything in this file, the `assets`, `components`, and `layouts` directories, and start fresh.
 
-//https://checkin-system-frontend.vercel.app/ 前端網站astro
 //npm run dev -- --host
 ---
 
@@ -83,6 +82,7 @@ import '../style/global.css';
             <textarea 
               id="special-status-input" 
               rows="2"
+              maxlength="500"
               placeholder="若有器材損壞、人員受傷等狀況請註記" 
               class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-lg"
             ></textarea>
@@ -157,7 +157,6 @@ import '../style/global.css';
       const urlToken = urlParams.get('token');
       const urlAction = urlParams.get('action'); 
 
-
       if (urlAction === 'IN') {
         actionDisplay.textContent = '🟢 上班簽到 (Check In)';
         actionDisplay.className = 'w-full px-4 py-3 rounded-lg text-lg font-bold text-center border border-emerald-300 bg-emerald-50 text-emerald-700';
@@ -181,49 +180,52 @@ import '../style/global.css';
         btn.classList.add('opacity-50', 'cursor-not-allowed');
       }
 
-      function sendCheckinRequest(lat, lng) {
+      // 🌟【架構升級】：改用 async/await 統一風格，程式碼更乾淨好維護
+      async function sendCheckinRequest(lat, lng) {
         const nameVal = nameInput.value.trim();
         const phoneVal = phoneInput.value.trim();
-        const groupVal = urlAction === 'OUT' ? groupSelect.value : ''; 
+        const groupVal = urlAction === 'OUT' ? groupSelect.value : '';
         const bentoVal = urlAction === 'IN' ? bentoSelect.value : ''; 
         const subGroupVal = urlAction === 'OUT' ? subGroupSelect.value : '';
         const specialStatusVal = urlAction === 'OUT' ? specialStatusInput.value.trim() : '';
 
-        fetch(`${API_URL}/api/checkin`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: nameVal,
-            phone_last4: phoneVal,
-            action: urlAction,
-            location_id: parseInt(urlLoc),
-            lat: lat,
-            lng: lng,
-            token: urlToken,
-            group: groupVal,
-            sub_group: subGroupVal,       // 傳送副組別
-            special_status: specialStatusVal, // 傳送特殊狀況
-            bento: bentoVal
-            
-          })
-        })
-        .then(response => response.json())
-        .then(data => {
+        try {
+          // 使用 await 等待伺服器回應
+          const response = await fetch(`${API_URL}/api/checkin`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: nameVal,
+              phone_last4: phoneVal,
+              action: urlAction,
+              location_id: parseInt(urlLoc),
+              lat: lat,
+              lng: lng,
+              token: urlToken,
+              group: groupVal,
+              sub_group: subGroupVal,       // 傳送副組別
+              special_status: specialStatusVal, // 傳送特殊狀況
+              bento: bentoVal
+            })
+          });
+          
+          // 使用 await 解析 JSON 資料
+          const data = await response.json();
+          
           if (data.success) {
             showStatus(data.message, false);
             btn.innerHTML = '🎉 紀錄已完成';
-          } 
-          else {
+          } else {
             showStatus(`❌ ${data.message}`, true);
             btn.disabled = false;
             btn.innerHTML = '📍 重新點擊送出';
           }
-        })
-        .catch(error => {
+        } catch (error) {
+          // 統一在這裡捕捉網路斷線或伺服器錯誤
           showStatus('❌ 伺服器連線失敗', true);
           btn.disabled = false;
           btn.innerHTML = '📍 重新點擊送出';
-        });
+        }
       }
 
       btn.addEventListener('click', () => {
@@ -249,6 +251,12 @@ import '../style/global.css';
         }
         if (urlAction === 'IN' && !bentoSelect.value) {
           showStatus('❌ 錯誤：請選擇您的便當種類', true);
+          return;
+        }
+        // 🌟 【新增】：在這裡進行前端的安全驗證
+        const specialStatusVal = specialStatusInput.value.trim();
+        if (urlAction === 'OUT' && specialStatusVal.length > 500) {
+          showStatus('❌ 錯誤：特殊狀況描述不能超過 500 字', true);
           return;
         }
 

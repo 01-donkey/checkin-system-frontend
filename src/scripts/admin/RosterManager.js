@@ -5,8 +5,19 @@ export class RosterManager {
     this.globalAbsent = [];
     this.bindElements();
     this.bindEvents();
+
     // 預設日期為今天
     this.rosterDate.value = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' });
+  }
+
+  // 🌟【修正 1】：移除 function 關鍵字，變成類別方法
+  escHtml(str) {
+    return String(str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   }
 
   bindElements() {
@@ -21,6 +32,11 @@ export class RosterManager {
     this.absentUl = document.getElementById('absent-list-ul');
     this.rosterCount = document.getElementById('roster-count');
     this.absentCount = document.getElementById('absent-count');
+    // 🌟【新增】出缺席與確認功能元素
+    this.confirmBtn = document.getElementById('confirm-roster-btn');
+    this.attendanceStart = document.getElementById('attendance-start');
+    this.attendanceEnd = document.getElementById('attendance-end');
+    this.exportAttendanceBtn = document.getElementById('export-attendance-btn');
   }
 
   bindEvents() {
@@ -29,6 +45,8 @@ export class RosterManager {
     this.rosterDate.addEventListener('change', () => this.loadRosterList());
     this.refreshBtn.addEventListener('click', () => this.loadRosterList());
     this.search.addEventListener('input', () => this.renderRosterLists());
+    this.confirmBtn.addEventListener('click',  () => this.confirmRoster());          // ← 新增
+    this.exportAttendanceBtn.addEventListener('click', () => this.exportAttendance());
   }
 
   async submitRoster(isClear = false) {
@@ -121,17 +139,109 @@ export class RosterManager {
     this.absentCount.textContent = filteredAbsent.length;
 
     if (filteredRoster.length > 0) {
-      this.rosterUl.innerHTML = filteredRoster.map(r => `<li>${r.name} <span class="text-gray-400 text-xs">(${r.phone_last4})</span></li>`).join('');
+      // 🌟【修正 2】：加上 this.escHtml
+      this.rosterUl.innerHTML = filteredRoster.map(r => `<li>${this.escHtml(r.name)} <span class="text-gray-400 text-xs">(${r.phone_last4})</span></li>`).join('');
     } else {
       this.rosterUl.innerHTML = '<li class="text-gray-400 italic list-none">查無相符名單</li>';
     }
     
     if (filteredAbsent.length > 0) {
-      this.absentUl.innerHTML = filteredAbsent.map(r => `<li class="font-bold text-red-600">${r.name} <span class="text-red-400 text-xs font-normal">(${r.phone_last4})</span></li>`).join('');
+      // 🌟【修正 2】：加上 this.escHtml
+      this.absentUl.innerHTML = filteredAbsent.map(r => `<li class="font-bold text-red-600">${this.escHtml(r.name)} <span class="text-red-400 text-xs font-normal">(${r.phone_last4})</span></li>`).join('');
     } else if (this.globalRoster.length > 0 && query === '') {
       this.absentUl.innerHTML = '<li class="text-green-600 font-bold list-none">🎉 全員到齊！</li>';
     } else {
       this.absentUl.innerHTML = '<li class="text-gray-400 italic list-none">查無相符名單</li>';
     }
   }
+
+  // 確認班表：將今日暫存白名單送入資料庫
+async confirmRoster() {
+  const targetDate = this.rosterDate.value;
+  if (!targetDate) return alert('請先選擇日期！');
+
+  const rosterCount = this.globalRoster.length;
+  if (rosterCount === 0) {
+    return alert('目前暫存白名單為空，請先上傳班表再確認！');
+  }
+
+  const confirmed = confirm(
+    `確認要將 ${targetDate} 的 ${rosterCount} 筆排班存入資料庫嗎？\n\n（之後可以用來計算出缺席率，此操作可重複執行以覆蓋）`
+  );
+  if (!confirmed) return;
+
+  const originalText = this.confirmBtn.textContent;
+  this.confirmBtn.textContent = '⏳ 存入中...';
+  this.confirmBtn.disabled = true;
+
+  try {
+    const data = await this.api.post('/api/roster/confirm', { targetDate });
+    if (data.success) {
+      alert(data.message);
+      // 按鈕短暫顯示成功狀態
+      this.confirmBtn.textContent = '✅ 已確認存入';
+      setTimeout(() => {
+        this.confirmBtn.textContent = originalText;
+        this.confirmBtn.disabled = false;
+      }, 3000);
+    } else {
+      alert('存入失敗：' + data.message);
+      this.confirmBtn.textContent = originalText;
+      this.confirmBtn.disabled = false;
+    }
+  } catch (e) {
+    alert('伺服器連線異常');
+    this.confirmBtn.textContent = originalText;
+    this.confirmBtn.disabled = false;
+  }
+}
+
+// 匯出出缺席率 CSV
+async exportAttendance() {
+  const startDate = this.attendanceStart.value;
+  const endDate   = this.attendanceEnd.value;
+
+  if (!startDate || !endDate) return alert('請選擇完整的起訖日期！');
+  if (new Date(startDate) > new Date(endDate)) return alert('結束日期不能早於開始日期！');
+
+  const originalText = this.exportAttendanceBtn.textContent;
+  this.exportAttendanceBtn.textContent = '⏳ 產生中...';
+  this.exportAttendanceBtn.disabled = true;
+
+  try {
+    const res = await fetch(`${this.api.baseUrl}/api/attendance/export`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        password: this.api.password, 
+        startDate, 
+        endDate 
+      })
+    });
+
+    if (!res.ok) throw new Error('匯出失敗');
+
+    const blob = await res.blob();
+    const url  = window.URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `出缺席率_${startDate}至${endDate}.csv`;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+
+    this.exportAttendanceBtn.textContent = '✅ 下載成功';
+  } catch (e) {
+    alert('匯出失敗，請確認日期範圍內有確認過的排班紀錄');
+    this.exportAttendanceBtn.textContent = originalText;
+  } finally {
+    setTimeout(() => {
+      this.exportAttendanceBtn.textContent = originalText;
+      this.exportAttendanceBtn.disabled = false;
+    }, 3000);
+  }
+}
+
 }
