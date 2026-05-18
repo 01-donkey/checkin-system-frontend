@@ -1,14 +1,7 @@
-import QRCode from 'qrcode';
-
+// scripts/admin/QRManager.js
 export class QRManager {
   constructor(apiClient) {
-    this.api = apiClient;
-    this.tempQrInterval = null;
-    this.bindElements();
-    this.bindEvents();
-  }
-
-  bindElements() {
+    this.api = apiClient; // 🌟 接收帶有 JWT 功能的 API 客戶端
     this.locationSelect = document.getElementById('temp-qr-location');
     this.actionSelect = document.getElementById('temp-qr-action');
     this.durationSelect = document.getElementById('temp-qr-duration');
@@ -18,79 +11,103 @@ export class QRManager {
     this.linkInput = document.getElementById('temp-qr-link');
     this.countdownText = document.getElementById('temp-qr-countdown');
     this.placeholder = document.getElementById('temp-qr-placeholder');
-  }
+    this.countdownInterval = null;
 
-  bindEvents() {
-    this.generateBtn.addEventListener('click', () => this.generateQR());
+    this.initEventListeners();
   }
 
   async loadLocations() {
-  try {
-    const data = await this.api.get('/api/locations');
-    if (data.success) {
-      this.locationSelect.innerHTML = ''; // 清空
-      data.locations.forEach(loc => {
-        const option = document.createElement('option');
-        option.value = String(parseInt(loc.id) || 0); // 確保 id 是數字
-        option.textContent = loc.location_name;        // textContent 自動跳脫
-        this.locationSelect.appendChild(option);
-      });
+    try {
+      const data = await this.api.get('/api/locations');
+      if (data.success) {
+        this.locationSelect.innerHTML = '';
+        data.locations.forEach(loc => {
+          const option = document.createElement('option');
+          option.value = loc.id;
+          option.textContent = loc.location_name;
+          this.locationSelect.appendChild(option);
+        });
+      }
+    } catch (e) {
+      console.error('載入場地失敗:', e);
     }
-  } catch(e) {
-    console.error('Failed to load locations', e);
   }
-}
+
+  initEventListeners() {
+    if (!this.generateBtn) return;
+    this.generateBtn.addEventListener('click', () => this.generateQR());
+  }
 
   async generateQR() {
-    const locId = this.locationSelect.value;
+    const location_id = this.locationSelect.value;
     const action = this.actionSelect.value;
     const duration = this.durationSelect.value;
-    
-    if (!locId) return alert('請先等待場地載入');
+
+    if (!location_id) return alert('請先選擇場地');
+
+    this.generateBtn.textContent = '⏳ 生成中...';
+    this.generateBtn.disabled = true;
 
     try {
-      const data = await this.api.post('/api/qr-token', { location_id: locId, duration });
+      // 🌟 核心修復：直接呼叫 this.api.post，它會自動把您的 JWT 夾帶在 Header 裡面送給後端！
+      const data = await this.api.post('/api/qr-token', {
+        location_id: parseInt(location_id),
+        duration: parseInt(duration)
+      });
+
       if (data.success) {
-        const baseUrl = window.location.origin;
-        const checkinUrl = `${baseUrl}/?loc=${data.location_id}&action=${action}&token=${data.token}`;
-        
-        QRCode.toCanvas(this.canvas, checkinUrl, { width: 220, margin: 2 });
-        
-        this.canvas.classList.remove('hidden');
-        this.linkBox.classList.remove('hidden');
-        this.countdownText.classList.remove('hidden');
-        this.placeholder.classList.add('hidden');
-        
-        this.linkInput.value = checkinUrl;
-        this.linkInput.onclick = () => {
-          this.linkInput.select();
-          navigator.clipboard.writeText(this.linkInput.value);
-          alert('網址已複製！可以貼到 LINE 群組了！');
-        };
-        
-        this.startCountdown(parseInt(duration));
+        import('qrcode').then(QRCode => {
+          const baseUrl = window.location.origin;
+          const checkinUrl = `${baseUrl}/?loc=${data.location_id}&action=${action}&token=${data.token}`;
+          
+          QRCode.default.toCanvas(this.canvas, checkinUrl, { width: 200, margin: 2 });
+          
+          this.canvas.classList.remove('hidden');
+          this.linkBox.classList.remove('hidden');
+          this.countdownText.classList.remove('hidden');
+          this.placeholder.classList.add('hidden');
+          
+          this.linkInput.value = checkinUrl;
+          this.startCountdown(parseInt(duration));
+        });
+      } else {
+        alert(data.message || '生成失敗');
       }
-    } catch(e) {
-      alert('條碼生成失敗，請確認伺服器連線');
+    } catch (e) {
+      alert('連線失敗，請檢查網路狀態');
+    } finally {
+      this.generateBtn.textContent = '⚡ 立即生成專屬條碼';
+      this.generateBtn.disabled = false;
     }
   }
 
   startCountdown(durationMs) {
-    const expireTime = Date.now() + durationMs;
-    if (this.tempQrInterval) clearInterval(this.tempQrInterval);
+    if (this.countdownInterval) clearInterval(this.countdownInterval);
     
-    this.tempQrInterval = setInterval(() => {
-      const remain = Math.floor((expireTime - Date.now()) / 1000);
+    const endTime = Date.now() + durationMs;
+    
+    const update = () => {
+      const remain = endTime - Date.now();
       if (remain <= 0) {
-        this.countdownText.textContent = '🛑 此條碼已過期！';
-        clearInterval(this.tempQrInterval);
-      } else {
-        const h = Math.floor(remain / 3600);
-        const m = Math.floor((remain % 3600) / 60);
-        const s = remain % 60;
-        let timeStr = h > 0 ? `${h}小時 ${m}分 ${s}秒` : `${m}分 ${s}秒`;
-        this.countdownText.textContent = `⏳ 距離條碼失效：${timeStr}`;
+        this.countdownText.textContent = '⚠️ 此條碼已過期';
+        this.countdownText.classList.replace('text-red-500', 'text-gray-500');
+        clearInterval(this.countdownInterval);
+        return;
       }
-    }, 1000);
+      
+      const hrs = Math.floor(remain / 3600000);
+      const mins = Math.floor((remain % 3600000) / 60000);
+      const secs = Math.floor((remain % 60000) / 1000);
+      
+      let timeStr = '';
+      if (hrs > 0) timeStr += `${hrs}小時 `;
+      timeStr += `${mins}分 ${secs}秒`;
+      
+      this.countdownText.textContent = `⏳ 距離過期還有：${timeStr}`;
+      this.countdownText.classList.replace('text-gray-500', 'text-red-500');
+    };
+    
+    update();
+    this.countdownInterval = setInterval(update, 1000);
   }
 }

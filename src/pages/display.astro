@@ -55,55 +55,35 @@ import '../style/global.css';
       const BASE_URL = window.location.origin;
       const API_URL = import.meta.env.PUBLIC_API_URL || 'http://localhost:3000';
 
-      let refreshInterval;
+      let refreshInterval = null;
 
-      // 🚀 主流程：安全驗證與載入
-      async function verifyAndStart() {
-        let kioskToken = sessionStorage.getItem('kiosk_token');
+      // 🌟 1. 生命週期初始化：直接從 URL 讀取通行證
+      const urlParams = new URLSearchParams(window.location.search);
+      const tokenFromUrl = urlParams.get('kiosk_token');
 
-        // 狀況 A：身上沒有 Token，需要用密碼去換
-        if (!kioskToken) {
-          const tempKey = localStorage.getItem('temp_kiosk_key');
-          
-          if (tempKey) {
-            try {
-              // 拿密碼去後端換取臨時鑰匙
-              const res = await fetch(`${API_URL}/api/qr-token/kiosk-token`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ password: tempKey })
-              });
-              const data = await res.json();
-              
-              if (data.success) {
-                // ✅ 換鑰匙成功！存入 Session，然後徹底銷毀明文密碼
-                sessionStorage.setItem('kiosk_token', data.token);
-                localStorage.removeItem('temp_kiosk_key'); 
-                
-                // 顯示正常畫面並載入場地
-                secureContent.classList.remove('hidden');
-                fetchLocations();
-              } else {
-                throw new Error('密碼錯誤或授權失敗');
-              }
-            } catch (e) {
-              // ❌ 後端驗證失敗
-              accessDenied.classList.remove('hidden');
-              errorMsg.innerHTML = '驗證失敗或伺服器異常！<br>請關閉此分頁，從後台重新進入。';
-            }
-          } else {
-            // ❌ 沒 Token 也沒密碼（路人直接輸入網址進來）
-            accessDenied.classList.remove('hidden');
-          }
-        } 
-        // 狀況 B：身上已經有 Token 了 (例如按 F5 重新整理網頁)
-        else {
-          secureContent.classList.remove('hidden');
-          fetchLocations();
-        }
+      if (tokenFromUrl) {
+        // 存入短期記憶體 (分頁關閉即銷毀)
+        sessionStorage.setItem('kiosk_token', tokenFromUrl);
+        // 刷清網址列，避免他人偷窺或拍照複製 Token
+        window.history.replaceState({}, document.title, window.location.pathname);
       }
 
-      // 1. 抓取場地資料
+      const kioskToken = sessionStorage.getItem('kiosk_token');
+
+      // 🌟 2. 安全防護網：無憑證直接阻斷
+      if (!kioskToken) {
+        accessDenied.classList.remove('hidden');
+        errorMsg.innerHTML = '🛑 安全授權已過期或缺失！<br>請關閉此分頁，自管理後台重新安全啟動。';
+      } else {
+        secureContent.classList.remove('hidden');
+        initKioskStation();
+      }
+
+      async function initKioskStation() {
+        await fetchLocations(); 
+      }
+
+      // 3. 抓取場地資料
       async function fetchLocations() {
         try {
           const res = await fetch(`${API_URL}/api/locations`);
@@ -118,7 +98,7 @@ import '../style/global.css';
               locationSelect.appendChild(option);
             });
             displayTitle.textContent = `${locationSelect.options[locationSelect.selectedIndex].text} 簽到站`;
-            startQRCodeCycle(); // 場地載入完畢，開始畫條碼
+            startQRCodeCycle(); 
           }
         } catch (error) {
           console.error('獲取場地失敗', error);
@@ -126,7 +106,7 @@ import '../style/global.css';
         }
       }
 
-      // 2. 每 5 秒更新條碼
+      // 4. 每 5 秒更新條碼 (極簡化，只做產碼)
       async function refreshQRCode() {
         const currentLocationId = locationSelect.value;
         const currentAction = actionSelect.value;
@@ -138,42 +118,48 @@ import '../style/global.css';
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-              // 🛡️ 每次都拿最新的 Kiosk Token 傳給後端
-              kioskToken: sessionStorage.getItem('kiosk_token'), 
-              location_id: currentLocationId
+              // 🌟 參數名稱修正：改為 token，對齊後端 generateQrToken 的需求
+              token: sessionStorage.getItem('kiosk_token'), 
+              location_id: currentLocationId,
+              duration: 5000,
+              action: currentAction 
             })
           });
+
           const tokenData = await response.json(); 
 
           if (tokenData.success) {
             // 成功取得條碼，畫在畫面上
             const checkinUrl = `${BASE_URL}/?loc=${tokenData.location_id}&action=${currentAction}&token=${tokenData.token}`;
-            // ✅ 改用 Astro 的環境變數守衛，只在本地開發時自動輸出
+            
             if (import.meta.env.DEV) {
               console.log("🔗 開發測試專用，打卡網址：", checkinUrl);
             }
+            
             QRCode.toCanvas(canvas, checkinUrl, { width: 300, margin: 2 }, function (error) {
               if (error) console.error(error);
             });
+            
             const now = new Date();
             const pad = n => String(n).padStart(2, '0');
             updateText.textContent = `最後更新：${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+            updateText.style.color = '#4b5563'; // 回復正常顏色
           } 
-          // 🚨 防護機制：如果 Kiosk Token 過期了 (超過 12 小時)
-          // 🌟【架構升級】：將原本的 tokenData.message === '...' 
-          // 改用後端專屬的 errorCode 判斷，取代脆弱的中文判斷
+          // 🚨 攔截後端發出的過期訊號
           else if (tokenData.errorCode === 'KIOSK_TOKEN_EXPIRED') {
               clearInterval(refreshInterval);
               secureContent.classList.add('hidden');
               accessDenied.classList.remove('hidden');
-              errorMsg.innerHTML = '安全授權已過期！<br>請關閉此分頁，從後台重新開啟。';
-            } else {
-              // 其他錯誤：在畫面上顯示，不要靜默
+              errorMsg.innerHTML = '🛑 安全授權已過期！<br>請關閉此分頁，從後台重新開啟。';
+              sessionStorage.removeItem('kiosk_token');
+          } else {
               updateText.textContent = `⚠️ 更新失敗 (${tokenData.message || '伺服器異常'})`;
               updateText.style.color = '#ef4444';
-            }
+          }
         } catch (error) {
           console.error('無法獲取條碼', error);
+          updateText.textContent = `⚠️ 網路連線中斷...`;
+          updateText.style.color = '#ef4444';
         }
       }
 
@@ -191,9 +177,6 @@ import '../style/global.css';
       actionSelect.addEventListener('change', () => {
         startQRCodeCycle();
       });
-
-      // 🚀 網頁一載入，第一件事就是執行安全驗證！
-      verifyAndStart();
     </script>
   </body>
 </html>

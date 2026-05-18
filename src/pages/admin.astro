@@ -240,6 +240,7 @@ import '../style/global.css';
 
       
     <script>
+
       // ✅ 修正寫法（讓 Vite 自動解析副檔名）
       import { ApiClient } from '../scripts/admin/ApiClient';
       import { SystemManager } from '../scripts/admin/SystemManager';
@@ -250,7 +251,11 @@ import '../style/global.css';
       // 1. 初始化 API 客戶端
       const API_URL = import.meta.env.PUBLIC_API_URL || 'http://localhost:3000';
       const apiClient = new ApiClient(API_URL);
-
+      const savedToken = sessionStorage.getItem('admin_jwt');
+      if (savedToken) {
+        apiClient.setToken(savedToken);
+        // 可以選擇自動觸發 onLoginSuccess，讓已登入的管理員不用重新輸入密碼
+      }
       // 2. 初始化各個功能模組
       const recordManager = new RecordManager(apiClient);
       const rosterManager = new RosterManager(apiClient);

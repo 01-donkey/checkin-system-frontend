@@ -196,7 +196,6 @@ async confirmRoster() {
   }
 }
 
-// 匯出出缺席率 CSV
 async exportAttendance() {
   const startDate = this.attendanceStart.value;
   const endDate   = this.attendanceEnd.value;
@@ -209,21 +208,11 @@ async exportAttendance() {
   this.exportAttendanceBtn.disabled = true;
 
   try {
-    const res = await fetch(`${this.api.baseUrl}/api/attendance/export`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        password: this.api.password, 
-        startDate, 
-        endDate 
-      })
-    });
-
-    if (!res.ok) throw new Error('匯出失敗');
-
-    const blob = await res.blob();
-    const url  = window.URL.createObjectURL(blob);
-    const a    = document.createElement('a');
+    // ✅ 直接用 ApiClient 的方法，自動帶 JWT Header
+    const blob = await this.api.exportCsv('/api/attendance/export', { startDate, endDate });
+    
+    const url = window.URL.createObjectURL(blob);
+    const a   = document.createElement('a');
     a.href     = url;
     a.download = `出缺席率_${startDate}至${endDate}.csv`;
     a.style.display = 'none';
@@ -235,7 +224,6 @@ async exportAttendance() {
     this.exportAttendanceBtn.textContent = '✅ 下載成功';
   } catch (e) {
     alert('匯出失敗，請確認日期範圍內有確認過的排班紀錄');
-    this.exportAttendanceBtn.textContent = originalText;
   } finally {
     setTimeout(() => {
       this.exportAttendanceBtn.textContent = originalText;

@@ -1,11 +1,21 @@
 export class ApiClient {
   constructor(baseUrl) {
     this.baseUrl = baseUrl;
-    this.password = ''; // 登入成功後儲存密碼，供其他請求使用
+    this.token = ''; // 🌟 安全升級：改為儲存 JWT 通行證，不再留存明文密碼！
   }
 
-  setPassword(pwd) {
-    this.password = pwd;
+  // 🌟 改名：不再接收明文密碼，改為接收 Token
+  setToken(token) {
+    this.token = token;
+  }
+
+  // 🌟 新增：集中管理並自動封裝 HTTP 安全標頭
+  _getHeaders() {
+    const headers = { 'Content-Type': 'application/json' };
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`; // 自動注入 Bearer Token
+    }
+    return headers;
   }
 
   // 🌟【架構優化】：建立統一的底層連線方法，集中管理超時與錯誤
@@ -35,21 +45,19 @@ export class ApiClient {
   }
 
   async post(endpoint, body = {}) {
-    const finalBody = { password: this.password, ...body };
     const res = await this._fetchWithTimeout(endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(finalBody)
+      headers: this._getHeaders(),
+      body: JSON.stringify(body)
     });
     return res.json();
   }
 
   async put(endpoint, body = {}) {
-    const finalBody = { password: this.password, ...body };
     const res = await this._fetchWithTimeout(endpoint, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(finalBody)
+      headers: this._getHeaders(),
+      body: JSON.stringify(body)
     });
     return res.json();
   }
@@ -62,11 +70,10 @@ export class ApiClient {
   }
 
   async exportCsv(endpoint, body = {}) {
-    const finalBody = { password: this.password, ...body };
     const res = await this._fetchWithTimeout(endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(finalBody)
+      headers: this._getHeaders(),
+      body: JSON.stringify(body)
     });
     
     if (!res.ok) throw new Error('報表匯出失敗');

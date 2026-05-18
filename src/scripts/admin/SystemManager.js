@@ -40,7 +40,13 @@ export class SystemManager {
   bindEvents() {
     this.loginBtn.addEventListener('click', () => this.handleLogin());
     this.saveTimeBtn.addEventListener('click', () => this.saveSettings());
-    this.openDisplayBtn.addEventListener('click', () => this.openKioskDisplay());
+    this.openDisplayBtn.addEventListener('click', () => {
+    this.openKioskDisplay().catch(err => {
+        console.error('開啟機台失敗:', err);
+        alert('無法啟動機台，請確認後端伺服器連線狀態');
+        this.openDisplayBtn.textContent = '🖥️ 啟動現場簽到螢幕';
+      });
+    });
   }
 
   updateStatusBadge(openTime, closeTime) {
@@ -56,30 +62,34 @@ export class SystemManager {
     }
   }
 
-  async handleLogin() {
+ async handleLogin() {
     this.loginBtn.textContent = '驗證中...';
     const pwd = this.pwdInput.value;
     
     try {
-      this.api.setPassword(pwd); 
-      const data = await this.api.post('/api/settings');
+      // 🌟 改呼叫新的登入 API，拿密碼換取安全 JWT Token
+      const data = await this.api.post('/api/login', { password: pwd });
       
       if (data.success) {
+        this.api.setToken(data.token); // 🌟 將 Token 存入連線核心，密碼隨即被記憶體回收釋放
+        sessionStorage.setItem('admin_jwt', data.token); // ← 存入 sessionStorage
         this.loginSection.classList.add('hidden');
         this.dashboardSection.classList.remove('hidden');
         this.dashboardSection.classList.add('flex');
         
-        // 🌟 優化 2：確保 Flatpickr 的內部狀態與畫面同步更新
-        if (this.openTime._flatpickr) {
-          this.openTime._flatpickr.setDate(data.open_time);
-          this.closeTime._flatpickr.setDate(data.close_time);
-        } else {
-          // 如果某天拿掉套件，還是能兼容原生 input
-          this.openTime.value = data.open_time;
-          this.closeTime.value = data.close_time;
+        // 此時 API 客戶端已攜帶 JWT，可合法下載日常設定資料
+        const configData = await this.api.post('/api/settings');
+        if (configData.success) {
+          if (this.openTime._flatpickr) {
+            this.openTime._flatpickr.setDate(configData.open_time);
+            this.closeTime._flatpickr.setDate(configData.close_time);
+          } else {
+            this.openTime.value = configData.open_time;
+            this.closeTime.value = configData.close_time;
+          }
+          this.updateStatusBadge(configData.open_time, configData.close_time);
         }
 
-        this.updateStatusBadge(data.open_time, data.close_time);
         this.onLoginSuccess(); 
       } else {
         this.errorMsg.textContent = data.message || '密碼錯誤，請重試。'; 
@@ -121,17 +131,30 @@ export class SystemManager {
     }
   }
 
-    openKioskDisplay() {
-    const safePassword = this.api.password;
-    if (!safePassword) return alert('請先輸入管理員密碼再開啟機台！');
+  async openKioskDisplay() {
+    this.openDisplayBtn.textContent = '🔄 安全授權中...';
     
-    localStorage.setItem('temp_kiosk_key', safePassword);
-    const newWindow = window.open('/display', '_blank');
-    
-    // 🛡️ 防彈窗被擋：若視窗沒有開啟，立刻清除暫存密碼
-    if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
-      localStorage.removeItem('temp_kiosk_key');
-      alert('⚠️ 彈窗被瀏覽器攔截！請允許此網站開啟彈窗後重試。');
+    // 取得當前管理員挑選的預設場地（若無則預設為 1）
+    const targetLocationId = document.getElementById('temp-qr-location')?.value || 1;
+
+    try {
+      // 持管理員 JWT 向後端換取該場地的 12 小時簽到站專用憑證
+      const data = await this.api.post('/api/qr-token/kiosk-token', { location_id: targetLocationId });
+      
+      if (data.success) {
+        // 🌟 最佳實踐：直接透過 URL 參數單向傳遞通行證，不留存在後台的瀏覽器中
+        const kioskUrl = `/display?kiosk_token=${encodeURIComponent(data.token)}`;
+        const newWindow = window.open(kioskUrl, '_blank');
+        
+        if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+          alert('⚠️ 彈窗被瀏覽器攔截！請允許此網站開啟彈窗後重試。');
+        }
+      }
+    } catch (e) {
+      alert('無法啟動機台，請確認後端伺服器連線狀態');
+    } finally {
+      this.openDisplayBtn.textContent = '🖥️ 啟動現場簽到螢幕';
     }
   }
+
 }
