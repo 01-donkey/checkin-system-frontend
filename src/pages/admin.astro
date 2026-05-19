@@ -1,6 +1,6 @@
 ---
 import '../style/global.css';
-
+import 'flatpickr/dist/flatpickr.min.css';
 ---
 
 <html lang="zh-TW">
@@ -8,8 +8,6 @@ import '../style/global.css';
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>系統後台登入</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
   </head>
   <body class="bg-gray-100 min-h-screen p-4 flex flex-col items-center justify-center ">
     
@@ -247,6 +245,10 @@ import '../style/global.css';
       import { RecordManager } from '../scripts/admin/RecordManager';
       import { RosterManager } from '../scripts/admin/RosterManager';
       import { QRManager } from '../scripts/admin/QRManager';
+      import flatpickr from 'flatpickr';
+
+      // 維運調整：Flatpickr 改由 npm 打包，不再依賴外部 CDN；保留 window.flatpickr 給 SystemManager 使用。
+      window.flatpickr = flatpickr;
 
       // 1. 初始化 API 客戶端
       const API_URL = import.meta.env.PUBLIC_API_URL || 'http://localhost:3000';
@@ -254,7 +256,6 @@ import '../style/global.css';
       const savedToken = sessionStorage.getItem('admin_jwt');
       if (savedToken) {
         apiClient.setToken(savedToken);
-        // 可以選擇自動觸發 onLoginSuccess，讓已登入的管理員不用重新輸入密碼
       }
       // 2. 初始化各個功能模組
       const recordManager = new RecordManager(apiClient);
@@ -268,6 +269,11 @@ import '../style/global.css';
         rosterManager.loadRosterList();
         qrManager.loadLocations();
       });
+
+      if (savedToken) {
+        // UX 修正：刷新 /admin 後先驗證舊 token，合法才自動回到 dashboard，過期則清掉 session。
+        systemManager.restoreSession();
+      }
 
     </script>
   </body>

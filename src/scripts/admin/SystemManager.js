@@ -62,6 +62,45 @@ export class SystemManager {
     }
   }
 
+  applySettings(configData) {
+    if (this.openTime._flatpickr) {
+      this.openTime._flatpickr.setDate(configData.open_time);
+      this.closeTime._flatpickr.setDate(configData.close_time);
+    } else {
+      this.openTime.value = configData.open_time;
+      this.closeTime.value = configData.close_time;
+    }
+    this.updateStatusBadge(configData.open_time, configData.close_time);
+  }
+
+  showDashboard() {
+    this.loginSection.classList.add('hidden');
+    this.dashboardSection.classList.remove('hidden');
+    this.dashboardSection.classList.add('flex');
+  }
+
+  clearSession() {
+    // Token 過期或被竄改時清乾淨，避免後台卡在半登入狀態。
+    sessionStorage.removeItem('admin_jwt');
+    this.api.setToken('');
+  }
+
+  async restoreSession() {
+    try {
+      // 刷新頁面後先用 /api/settings 驗證 token；成功才進 dashboard 並載入資料。
+      const configData = await this.api.post('/api/settings');
+      if (!configData.success) throw new Error('invalid session');
+
+      this.showDashboard();
+      this.applySettings(configData);
+      this.onLoginSuccess();
+    } catch (e) {
+      this.clearSession();
+      this.loginSection.classList.remove('hidden');
+      this.dashboardSection.classList.add('hidden');
+    }
+  }
+
  async handleLogin() {
     this.loginBtn.textContent = '驗證中...';
     const pwd = this.pwdInput.value;
@@ -73,21 +112,12 @@ export class SystemManager {
       if (data.success) {
         this.api.setToken(data.token); // 🌟 將 Token 存入連線核心，密碼隨即被記憶體回收釋放
         sessionStorage.setItem('admin_jwt', data.token); // ← 存入 sessionStorage
-        this.loginSection.classList.add('hidden');
-        this.dashboardSection.classList.remove('hidden');
-        this.dashboardSection.classList.add('flex');
+        this.showDashboard();
         
         // 此時 API 客戶端已攜帶 JWT，可合法下載日常設定資料
         const configData = await this.api.post('/api/settings');
         if (configData.success) {
-          if (this.openTime._flatpickr) {
-            this.openTime._flatpickr.setDate(configData.open_time);
-            this.closeTime._flatpickr.setDate(configData.close_time);
-          } else {
-            this.openTime.value = configData.open_time;
-            this.closeTime.value = configData.close_time;
-          }
-          this.updateStatusBadge(configData.open_time, configData.close_time);
+          this.applySettings(configData);
         }
 
         this.onLoginSuccess(); 
@@ -104,7 +134,9 @@ export class SystemManager {
   }
 
   async saveSettings() {
+    const originalText = '儲存時間設定';
     this.saveTimeBtn.textContent = '🔄 儲存中...';
+    this.saveTimeBtn.disabled = true;
     this.saveTimeBtn.classList.add('opacity-75', 'cursor-not-allowed');
     const newOpen = this.openTime.value;
     const newClose = this.closeTime.value;
@@ -123,11 +155,31 @@ export class SystemManager {
           this.saveTimeBtn.classList.replace('bg-blue-600', 'bg-green-600');
           this.saveTimeBtn.classList.replace('hover:bg-blue-700', 'hover:bg-green-700');
           this.saveTimeBtn.classList.remove('opacity-75', 'cursor-not-allowed');
+          this.saveTimeBtn.disabled = false;
           this.settingsCard.classList.remove('ring-4', 'ring-blue-100');
+        }, 3000);
+      } else {
+        // API 可能回 401/403/400 並帶 success:false；要明確復原按鈕，避免停在「儲存中」。
+        if (data.message && data.message.includes('安全憑證')) {
+          this.clearSession();
+          alert('登入已過期，請重新登入後再儲存設定。');
+          window.location.reload();
+          return;
+        }
+        this.saveTimeBtn.textContent = `❌ ${data.message || '儲存失敗'}`;
+        setTimeout(() => {
+          this.saveTimeBtn.textContent = originalText;
+          this.saveTimeBtn.classList.remove('opacity-75', 'cursor-not-allowed');
+          this.saveTimeBtn.disabled = false;
         }, 3000);
       }
     } catch (e) {
       this.saveTimeBtn.textContent = '❌ 儲存失敗';
+      setTimeout(() => {
+        this.saveTimeBtn.textContent = originalText;
+        this.saveTimeBtn.classList.remove('opacity-75', 'cursor-not-allowed');
+        this.saveTimeBtn.disabled = false;
+      }, 3000);
     }
   }
 

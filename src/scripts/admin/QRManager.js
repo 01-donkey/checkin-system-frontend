@@ -52,6 +52,7 @@ export class QRManager {
       // 🌟 核心修復：直接呼叫 this.api.post，它會自動把您的 JWT 夾帶在 Header 裡面送給後端！
       const data = await this.api.post('/api/qr-token', {
         location_id: parseInt(location_id),
+        action,
         duration: parseInt(duration)
       });
 

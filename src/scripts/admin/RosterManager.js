@@ -1,3 +1,9 @@
+import { escHtml } from './domUtils';
+
+function normalizeRosterName(name) {
+  return String(name || '').trim().replace(/\s+/g, '');
+}
+
 export class RosterManager {
   constructor(apiClient) {
     this.api = apiClient;
@@ -8,16 +14,6 @@ export class RosterManager {
 
     // 預設日期為今天
     this.rosterDate.value = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' });
-  }
-
-  // 🌟【修正 1】：移除 function 關鍵字，變成類別方法
-  escHtml(str) {
-    return String(str || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
   }
 
   bindElements() {
@@ -49,6 +45,15 @@ export class RosterManager {
     this.exportAttendanceBtn.addEventListener('click', () => this.exportAttendance());
   }
 
+  setListMessage(target, message, className) {
+    // XSS 防護：API 回來的錯誤訊息一律用 textContent 填入，不直接拼 innerHTML。
+    target.replaceChildren();
+    const item = document.createElement('li');
+    item.className = className;
+    item.textContent = message;
+    target.appendChild(item);
+  }
+
   async submitRoster(isClear = false) {
     const btn = isClear ? this.clearBtn : this.uploadBtn;
     const originalText = btn.textContent;
@@ -74,6 +79,16 @@ export class RosterManager {
         }
       }
       if (rosterData.length === 0) return alert('解析失敗，請確認格式是否為「姓名 四碼」');
+
+      // 白名單允許同四碼不同姓名，但同一天同姓名+四碼重複貼上會造成資料判斷不穩，先在前端攔下。
+      const seen = new Set();
+      for (const item of rosterData) {
+        const key = `${normalizeRosterName(item.name)}|${item.phone_last4}`;
+        if (seen.has(key)) {
+          return alert(`名單重複：${item.name} ${item.phone_last4}`);
+        }
+        seen.add(key);
+      }
     }
 
     btn.textContent = '⏳ 處理中...';
@@ -110,8 +125,8 @@ export class RosterManager {
         this.globalAbsent = data.absent || [];
         this.renderRosterLists();
       } else {
-        this.rosterUl.innerHTML = `<li class="text-red-400 list-none">${data.message || '拒絕訪問'}</li>`;
-        this.absentUl.innerHTML = `<li class="text-red-400 list-none">${data.message || '拒絕訪問'}</li>`;
+        this.setListMessage(this.rosterUl, data.message || '拒絕訪問', 'text-red-400 list-none');
+        this.setListMessage(this.absentUl, data.message || '拒絕訪問', 'text-red-400 list-none');
       }
     } catch (e) {
       this.rosterUl.innerHTML = '<li class="text-red-400 list-none">載入失敗</li>';
@@ -139,15 +154,14 @@ export class RosterManager {
     this.absentCount.textContent = filteredAbsent.length;
 
     if (filteredRoster.length > 0) {
-      // 🌟【修正 2】：加上 this.escHtml
-      this.rosterUl.innerHTML = filteredRoster.map(r => `<li>${this.escHtml(r.name)} <span class="text-gray-400 text-xs">(${r.phone_last4})</span></li>`).join('');
+      // XSS 防護：班表姓名來自輸入資料，顯示前統一轉義。
+      this.rosterUl.innerHTML = filteredRoster.map(r => `<li>${escHtml(r.name)} <span class="text-gray-400 text-xs">(${r.phone_last4})</span></li>`).join('');
     } else {
       this.rosterUl.innerHTML = '<li class="text-gray-400 italic list-none">查無相符名單</li>';
     }
     
     if (filteredAbsent.length > 0) {
-      // 🌟【修正 2】：加上 this.escHtml
-      this.absentUl.innerHTML = filteredAbsent.map(r => `<li class="font-bold text-red-600">${this.escHtml(r.name)} <span class="text-red-400 text-xs font-normal">(${r.phone_last4})</span></li>`).join('');
+      this.absentUl.innerHTML = filteredAbsent.map(r => `<li class="font-bold text-red-600">${escHtml(r.name)} <span class="text-red-400 text-xs font-normal">(${r.phone_last4})</span></li>`).join('');
     } else if (this.globalRoster.length > 0 && query === '') {
       this.absentUl.innerHTML = '<li class="text-green-600 font-bold list-none">🎉 全員到齊！</li>';
     } else {

@@ -15,7 +15,7 @@ import '../style/global.css';
   <body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
 <main class="bg-white rounded-2xl shadow-lg w-full max-w-sm p-6 text-center">
       <h1 class="text-2xl font-bold text-gray-800 mb-2">現場人員打卡</h1>
-      <p class="text-gray-500 mb-6 text-sm">請輸入您的生日四碼並確認打卡類型</p>
+      <p class="text-gray-500 mb-6 text-sm">請輸入您的姓名與生日四碼並確認打卡類型</p>
 
       <!-- 表單輸入區塊開始 -->
       <div class="space-y-4 mb-6 text-left">
@@ -121,6 +121,7 @@ import '../style/global.css';
         <p id="status-text" class="text-gray-700 font-medium pb-2 border-b"></p>
         <div class="mt-2 text-gray-400 space-y-1 text-xs">
           <p>Lat: <span id="lat-val">--</span> | Lng: <span id="lng-val">--</span></p>
+          <p>GPS 誤差: <span id="accuracy-val">--</span> 公尺</p>
         </div>
       </div>
 
@@ -136,6 +137,7 @@ import '../style/global.css';
       const statusText = document.getElementById('status-text');
       const latVal = document.getElementById('lat-val');
       const lngVal = document.getElementById('lng-val');
+      const accuracyVal = document.getElementById('accuracy-val');
       
       const groupContainer = document.getElementById('group-container');
       const groupSelect = document.getElementById('group-select');
@@ -167,7 +169,8 @@ import '../style/global.css';
       else if (urlAction === 'OUT') {
         actionDisplay.textContent = '🔴 下班簽退 (Check Out)';
         actionDisplay.className = 'w-full px-4 py-3 rounded-lg text-lg font-bold text-center border border-rose-300 bg-rose-50 text-rose-700';
-        nameContainer.classList.add('hidden');       
+        // 簽退也要姓名 + 四碼，避免不同人生日四碼相同時被誤認成同一筆資料。
+        nameContainer.classList.remove('hidden');       
         groupContainer.classList.remove('hidden');   
         bentoContainer.classList.add('hidden');    
         subGroupContainer.classList.remove('hidden'); // 顯示副組別
@@ -181,7 +184,7 @@ import '../style/global.css';
       }
 
       // 🌟【架構升級】：改用 async/await 統一風格，程式碼更乾淨好維護
-      async function sendCheckinRequest(lat, lng) {
+      async function sendCheckinRequest(lat, lng, accuracy) {
         const nameVal = nameInput.value.trim();
         const phoneVal = phoneInput.value.trim();
         const groupVal = urlAction === 'OUT' ? groupSelect.value : '';
@@ -201,6 +204,8 @@ import '../style/global.css';
               location_id: parseInt(urlLoc),
               lat: lat,
               lng: lng,
+              // 後端會用 GPS accuracy 判斷這次定位是否可信，避免誤差過大仍被打卡成功。
+              accuracy,
               token: urlToken,
               group: groupVal,
               sub_group: subGroupVal,       // 傳送副組別
@@ -241,8 +246,8 @@ import '../style/global.css';
           showStatus('❌ 錯誤：請輸入正確的 4 碼數字', true);
           return;
         }
-        if (urlAction === 'IN' && !nameInput.value.trim()) {
-          showStatus('❌ 錯誤：上班簽到請務必輸入您的姓名', true);
+        if (!nameInput.value.trim()) {
+          showStatus('❌ 錯誤：請輸入您的姓名', true);
           return;
         }
         if (urlAction === 'OUT' && !groupSelect.value) {
@@ -268,10 +273,12 @@ import '../style/global.css';
           (position) => {
             const lat = position.coords.latitude;
             const lng = position.coords.longitude;
+            const accuracy = position.coords.accuracy;
             latVal.textContent = lat.toFixed(4);
             lngVal.textContent = lng.toFixed(4);
+            accuracyVal.textContent = Math.round(accuracy);
             
-            sendCheckinRequest(lat, lng);
+            sendCheckinRequest(lat, lng, accuracy);
           },
           (error) => {
             showStatus('❌ 定位失敗：請至設定開啟位置權限。', true);

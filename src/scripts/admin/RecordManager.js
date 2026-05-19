@@ -1,3 +1,5 @@
+import { escHtml } from './domUtils';
+
 export class RecordManager {
   constructor(apiClient) {
     this.api = apiClient;
@@ -30,7 +32,8 @@ export class RecordManager {
   }
 
   async fetchRecords() {
-    this.tableBody.innerHTML = '<tr><td colspan="7" class="p-8 text-center text-gray-400 font-medium animate-pulse">🔄 載入資料中...</td></tr>';
+    // 表格目前有 9 欄，狀態列 colspan 必須同步，避免載入/空資料時版面歪掉。
+    this.tableBody.innerHTML = '<tr><td colspan="9" class="p-8 text-center text-gray-400 font-medium animate-pulse">🔄 載入資料中...</td></tr>';
     try {
       const data = await this.api.post('/api/records');
       if (data.success && data.records.length > 0) {
@@ -38,12 +41,12 @@ export class RecordManager {
         this.updateLocationFilter();
         this.renderTable();
       } else {
-        this.tableBody.innerHTML = '<tr><td colspan="7" class="p-8 text-center text-gray-400">目前尚無任何打卡紀錄</td></tr>';
+        this.tableBody.innerHTML = '<tr><td colspan="9" class="p-8 text-center text-gray-400">目前尚無任何打卡紀錄</td></tr>';
         this.statPresent.textContent = '0';
         this.statLeft.textContent = '0';
       }
     } catch (e) {
-      this.tableBody.innerHTML = '<tr><td colspan="7" class="p-8 text-center text-red-400">載入失敗，請稍後再試</td></tr>';
+      this.tableBody.innerHTML = '<tr><td colspan="9" class="p-8 text-center text-red-400">載入失敗，請稍後再試</td></tr>';
     }
   }
 
@@ -113,17 +116,6 @@ export class RecordManager {
     }
   }
 
-
-  // 🌟【修正 1】：移除 function 關鍵字，變成類別方法
-  escHtml(str) {
-    return String(str || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
-  }
-
   renderTable() {
     const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' });
     const selectedLocation = this.locationFilter.value;
@@ -152,20 +144,20 @@ export class RecordManager {
     this.statLeft.textContent = leftCount;
 
     if (displayRecords.length > 0) {
-      // 🌟【修正 2】：呼叫時必須加上 this.escHtml
+      // XSS 防護：資料庫回來的姓名/組別/文字欄位統一透過 escHtml 轉義。
       this.tableBody.innerHTML = displayRecords.map(g => `
         <tr class="hover:bg-blue-50 transition-colors">
-          <td class="p-3 font-medium text-gray-500">${this.escHtml(g.date)}</td>
-          <td class="p-3"><span class="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs border border-gray-200">${this.escHtml(g.group)}</span></td>
-          <td class="p-3"><div class="max-w-xs text-sm text-gray-800 font-medium">${this.escHtml(g.subGroup) || '<span class="text-gray-300 italic font-normal">無</span>'}</div></td>
-          <td class="p-3 font-bold text-gray-800 text-base">${this.escHtml(g.name)}</td>
-          <td class="p-3 text-gray-600 text-xs">${this.escHtml(g.location)}</td>
-          <td class="p-3">${g.inTime}</td> <td class="p-3">${g.outTime}</td> <td class="p-3"><div class="max-w-xs text-sm text-gray-800 font-medium">${this.escHtml(g.bento) || '<span class="text-gray-300 italic font-normal">未選擇便當</span>'}</div></td>
-          <td class="p-3"><div class="max-w-xs text-sm text-gray-800 font-medium">${this.escHtml(g.specialStatus) || '<span class="text-gray-300 italic font-normal">無</span>'}</div></td>
+          <td class="p-3 font-medium text-gray-500">${escHtml(g.date)}</td>
+          <td class="p-3"><span class="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs border border-gray-200">${escHtml(g.group)}</span></td>
+          <td class="p-3"><div class="max-w-xs text-sm text-gray-800 font-medium">${escHtml(g.subGroup) || '<span class="text-gray-300 italic font-normal">無</span>'}</div></td>
+          <td class="p-3 font-bold text-gray-800 text-base">${escHtml(g.name)}</td>
+          <td class="p-3 text-gray-600 text-xs">${escHtml(g.location)}</td>
+          <td class="p-3">${g.inTime}</td> <td class="p-3">${g.outTime}</td> <td class="p-3"><div class="max-w-xs text-sm text-gray-800 font-medium">${escHtml(g.bento) || '<span class="text-gray-300 italic font-normal">未選擇便當</span>'}</div></td>
+          <td class="p-3"><div class="max-w-xs text-sm text-gray-800 font-medium">${escHtml(g.specialStatus) || '<span class="text-gray-300 italic font-normal">無</span>'}</div></td>
         </tr>
       `).join('');
     } else {
-      this.tableBody.innerHTML = '<tr><td colspan="7" class="p-8 text-center text-gray-400">該場地目前尚無打卡紀錄</td></tr>';
+      this.tableBody.innerHTML = '<tr><td colspan="9" class="p-8 text-center text-gray-400">該場地目前尚無打卡紀錄</td></tr>';
     }
   }
 
